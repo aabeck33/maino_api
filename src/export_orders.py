@@ -194,6 +194,7 @@ def process_orders_and_invoices(session: requests.Session, token: str, status: s
                 find_value_by_keys(order.get("cliente") or {}, ["municipio", "municipio_ibge"])
                 or ""
             ).strip() or "N/A"
+            order_representative = find_value_by_keys(order.get("representante") or {}, ["nome", "name"]) or "N/A"
             items = order.get("itens") or []
 
             # If order has no items, we skip or add a row with empty items?
@@ -215,11 +216,9 @@ def process_orders_and_invoices(session: requests.Session, token: str, status: s
             invoice_status = invoice_info["status"]
             url_nfe = invoice_info["danfe_url"]
             order_total = compute_order_total_from_parcels(order)
-            effective_total = order_total
 
             effective_cep = order_cep or "N/A"
             effective_uf = map_cep_to_uf(effective_cep)
-            effective_city = order_city
 
             for item in items:
                 extracted_rows.append({
@@ -233,8 +232,9 @@ def process_orders_and_invoices(session: requests.Session, token: str, status: s
                     "URL NFe": url_nfe,
                     "CEP": effective_cep,
                     "UF": effective_uf,
-                    "Cidade": effective_city,
-                    "Valor Total": effective_total,
+                    "Cidade": order_city,
+                    "Valor Total": order_total,
+                    "Representante": order_representative,
                 })
 
         pagination = data.get("pagination") or {}
@@ -263,6 +263,7 @@ def save_to_excel(rows: List[Dict[str, Any]], filepath: Path) -> None:
         "UF",
         "Cidade",
         "Valor Total",
+        "Representante",
     ]
     
     workbook = Workbook()
