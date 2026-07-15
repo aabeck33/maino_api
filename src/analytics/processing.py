@@ -7,6 +7,7 @@
     de forma eficiente e interativa.
 """
 
+import os
 from pathlib import Path
 from typing import Dict, Any, Tuple
 import unicodedata
@@ -43,6 +44,7 @@ class SalesAnalytics:
         df["Status da Nota Fiscal"] = df["Status da Nota Fiscal"].astype(str).str.strip()
         df["URL NFe"] = df["URL NFe"].astype(str).str.strip()
         df["CEP"] = df["CEP"].astype(str).str.strip()
+        df["Representante"] = df["Representante"].astype(str).str.strip()
 
         return df
 
@@ -234,14 +236,163 @@ class SalesAnalytics:
             return pd.DataFrame()
 
         normalized = SalesAnalytics._normalize_geo_data(df)
+        if "Representante" not in normalized.columns:
+            normalized["Representante"] = "N/A"
+
         summary = normalized.groupby(["Pedido ID", "Número do Pedido"], dropna=False, as_index=False).agg(
             CEP=("CEP", "first"),
             UF=("UF", lambda values: next((v for v in values if v not in {"", "N/A"}), "N/A")),
             Cidade=("Cidade", lambda values: next((v for v in values if v not in {"", "N/A"}), "N/A")),
             Valor_Total=("Valor Total", "first"),
-            Status_da_Nota_Fiscal=("Status da Nota Fiscal", "first")
+            Status_da_Nota_Fiscal=("Status da Nota Fiscal", "first"),
+            Representante=("Representante", "first")
         )
         summary["Valor_Total"] = pd.to_numeric(summary["Valor_Total"], errors="coerce").fillna(0.0)
+        return summary
+
+    @staticmethod
+    def _find_date_column(df: pd.DataFrame) -> str | None:
+        if df.empty:
+            return None
+
+        candidates = [col for col in df.columns if "data" in col.lower() or "date" in col.lower()]
+        for col in candidates:
+            if pd.api.types.is_datetime64_any_dtype(df[col]):
+                return col
+            parsed = pd.to_datetime(df[col], errors="coerce")
+            if parsed.notna().any():
+                return col
+        return None
+
+    @staticmethod
+    def _client_identifier(df: pd.DataFrame) -> pd.Series:
+        if "CEP" in df.columns and df["CEP"].notna().any():
+            return df["CEP"].astype(str).str.strip().replace({"": "N/A"})
+        if "Cliente" in df.columns and df["Cliente"].notna().any():
+            return df["Cliente"].astype(str).str.strip().replace({"": "N/A"})
+        return df["Pedido ID"].astype(str)
+
+    @staticmethod
+    def _ensure_representante_column(df: pd.DataFrame) -> pd.DataFrame:
+        """Ensure the `Representante` column exists and non-empty values are set.
+
+        If the column is missing or values are empty/na, fill with 'Leonardo'.
+        """
+        default_rep = os.getenv("NOME_PADRAO_REPRESENTANTE", "Leonardo")
+        if df is None or df.empty:
+            return df
+
+        df = df.copy()
+        if "Representante" not in df.columns:
+            df["Representante"] = default_rep
+            return df
+
+        # Normalize strings and replace empty/na with default
+        df["Representante"] = df["Representante"].astype(str).str.strip()
+        df.loc[df["Representante"].isna(), "Representante"] = ""
+        df.loc[df["Representante"] == "", "Representante"] = default_rep
+        return df
+
+    @staticmethod
+    def get_representative_sales_summary(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        df = SalesAnalytics._ensure_representante_column(df)
+        df = df.copy()
+        df["Valor Total"] = pd.to_numeric(df["Valor Total"], errors="coerce").fillna(0.0)
+        df["Cliente_Chave"] = SalesAnalytics._client_identifier(df)
+
+        summary = df.groupby("Representante", dropna=False, as_index=False).agg(
+            Receita_Total=("Valor Total", "sum"),
+            Pedidos=("Pedido ID", lambda values: values.nunique()),
+            Clientes_Unicos=("Cliente_Chave", lambda values: values.nunique()),
+            Produtos_Distintos=("Código do Produto", lambda values: values.nunique())
+        )
+        summary["Ticket_Medio"] = summary.apply(
+            lambda row: row["Receita_Total"] / row["Pedidos"] if row["Pedidos"] > 0 else 0.0,
+            axis=1
+        )
+        summary["Pedidos_por_Cliente"] = summary.apply(
+            lambda row: row["Pedidos"] / row["Clientes_Unicos"] if row["Clientes_Unicos"] > 0 else 0.0,
+            axis=1
+        )
+        total_revenue = summary["Receita_Total"].sum()
+        summary["Participacao (%)"] = summary.apply(
+            lambda row: row["Receita_Total"] / total_revenue * 100 if total_revenue > 0 else 0.0,
+            axis=1
+        )
+        return summary.sort_values(by="Receita_Total", ascending=False).reset_index(drop=True)
+
+    @staticmethod
+    def get_representative_repurchase_rate(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        df = SalesAnalytics._ensure_representante_column(df)
+        df = df.copy()
+        df["Cliente_Chave"] = SalesAnalytics._client_identifier(df)
+
+        client_orders = (
+            df.groupby(["Representante", "Cliente_Chave"], dropna=False)["Pedido ID"]
+            .nunique()
+            .reset_index(name="Orders_per_Client")
+        )
+        summary = (
+            client_orders.groupby("Representante", dropna=False, as_index=False)
+            .agg(
+                Clientes_Recorrentes=("Orders_per_Client", lambda values: (values > 1).sum()),
+                Clientes_Total=("Orders_per_Client", "count")
+            )
+        )
+        summary["Recompra (%)"] = summary.apply(
+            lambda row: row["Clientes_Recorrentes"] / row["Clientes_Total"] * 100 if row["Clientes_Total"] > 0 else 0.0,
+            axis=1
+        )
+        return summary
+
+    @staticmethod
+    def get_representative_monthly_evolution(df: pd.DataFrame) -> pd.DataFrame:
+        date_col = SalesAnalytics._find_date_column(df)
+        if df is None or df.empty or date_col is None:
+            return pd.DataFrame()
+
+        df = SalesAnalytics._ensure_representante_column(df)
+        df = df.copy()
+        df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
+        df = df[df[date_col].notna()]
+        if df.empty:
+            return pd.DataFrame()
+
+        df["Mes"] = df[date_col].dt.to_period("M").dt.to_timestamp()
+        orders = SalesAnalytics._build_order_summary(df)
+        if orders.empty or "Representante" not in orders.columns:
+            return pd.DataFrame()
+
+        result = (
+            orders.groupby(["Representante", "Mes"], dropna=False, as_index=False)
+            .agg(Receita_Total=("Valor_Total", "sum"))
+            .sort_values(["Representante", "Mes"])
+        )
+        return result
+
+    @staticmethod
+    def get_representative_meta(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        df = SalesAnalytics._ensure_representante_column(df)
+
+        if "Meta" not in df.columns and "meta" not in df.columns:
+            return pd.DataFrame()
+
+        meta_column = "Meta" if "Meta" in df.columns else "meta"
+        df = df.copy()
+        df[meta_column] = pd.to_numeric(df[meta_column], errors="coerce").fillna(0.0)
+        summary = (
+            df.groupby("Representante", dropna=False, as_index=False)
+            .agg(Meta_Valor=(meta_column, "sum"))
+        )
         return summary
 
     @staticmethod

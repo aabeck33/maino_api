@@ -18,6 +18,11 @@ def make_df():
         "Quantidade":          [10.0, 5.0, 8.0, 3.0, 2.0, 6.0, 1.0],
         "ID da Nota Fiscal":   ["nf1", "nf1", "nf1", "N/A", "N/A", "nf3", "nf4"],
         "Status da Nota Fiscal": ["ACEITA", "ACEITA", "ACEITA", "Não emitida", "Não emitida", "ACEITA", "ACEITA"],
+        "Valor Total":         [1000.0, 1000.0, 1000.0, 600.0, 600.0, 200.0, 150.0],
+        "CEP":                 ["13044-480", "13044-480", "13044-480", "20010-000", "20010-000", "60000-000", "99900-000"],
+        "UF":                  ["SP", "SP", "SP", "RJ", "RJ", "CE", "RS"],
+        "Cidade":              ["Campinas", "Campinas", "Campinas", "Rio de Janeiro", "Rio de Janeiro", "Fortaleza", "Porto Alegre"],
+        "Representante":       ["Leonardo", "Leonardo", "Leonardo", "Sealtiel", "Sealtiel", "Leonardo", "Alvaro"],
     })
 
 
@@ -142,6 +147,31 @@ class TestFiltering(unittest.TestCase):
     def test_all_filter_returns_all(self):
         result = self.analytics.get_filtered_data("Todos")
         self.assertEqual(len(result), len(self.analytics.df))
+
+
+class TestRepresentativeAnalytics(unittest.TestCase):
+    def setUp(self):
+        self.df = make_df()
+
+    def test_representative_sales_summary(self):
+        summary = SalesAnalytics.get_representative_sales_summary(self.df)
+        self.assertEqual(summary.loc[summary['Representante'] == 'Leonardo', 'Receita_Total'].iloc[0], 2200.0)
+        self.assertEqual(summary.loc[summary['Representante'] == 'Leonardo', 'Pedidos'].iloc[0], 2)
+        self.assertEqual(summary.loc[summary['Representante'] == 'Leonardo', 'Clientes_Unicos'].iloc[0], 1)
+        self.assertAlmostEqual(summary.loc[summary['Representante'] == 'Leonardo', 'Ticket_Medio'].iloc[0], 1100.0)
+
+    def test_representative_repurchase_rate(self):
+        summary = SalesAnalytics.get_representative_repurchase_rate(self.df)
+        self.assertAlmostEqual(summary.loc[summary['Representante'] == 'Leonardo', 'Recompra (%)'].iloc[0], 100.0)
+        self.assertEqual(summary.loc[summary['Representante'] == 'Sealtiel', 'Clientes_Total'].iloc[0], 1)
+
+    def test_representative_meta_empty(self):
+        meta = SalesAnalytics.get_representative_meta(self.df)
+        self.assertTrue(meta.empty)
+
+    def test_representative_monthly_evolution_empty(self):
+        monthly = SalesAnalytics.get_representative_monthly_evolution(self.df)
+        self.assertTrue(monthly.empty)
 
 
 class TestGeoAnalytics(unittest.TestCase):

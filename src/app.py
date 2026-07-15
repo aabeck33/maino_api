@@ -23,6 +23,7 @@ from dashboard.views import (
     render_geography,
     render_fiscal,
     render_insights,
+    render_representatives,
 )
 
 # Adjust system path to support absolute/package imports
@@ -136,6 +137,7 @@ def main():
     # 7. Navigation Tabs
     tabs = st.tabs([
         "📈 Visão Geral", 
+        "👥 Representantes de Vendas",
         "📦 Produtos", 
         "🛒 Pedidos", 
         "🌍 Geo", 
@@ -148,18 +150,21 @@ def main():
         render_overview(filtered_df, kpis)
 
     with tabs[1]:
-        render_products(filtered_df, IS_DARK)
+        render_representatives(filtered_df, IS_DARK)
 
     with tabs[2]:
-        render_orders(filtered_df, IS_DARK)
+        render_products(filtered_df, IS_DARK)
 
     with tabs[3]:
-        render_geography(filtered_df, IS_DARK)
+        render_orders(filtered_df, IS_DARK)
 
     with tabs[4]:
-        render_fiscal(filtered_df, IS_DARK)
+        render_geography(filtered_df, IS_DARK)
 
     with tabs[5]:
+        render_fiscal(filtered_df, IS_DARK)
+
+    with tabs[6]:
         render_insights(filtered_df, kpis)
 
 if __name__ == "__main__":

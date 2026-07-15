@@ -115,6 +115,125 @@ def render_overview(df: pd.DataFrame, kpis: Dict[str, Any]) -> None:
             """, unsafe_allow_html=True)
 
 
+def render_representatives(df: pd.DataFrame, is_dark: bool) -> None:
+    """Renders the sales representatives performance tab."""
+    st.markdown("### Representantes de Vendas")
+
+    summary = SalesAnalytics.get_representative_sales_summary(df)
+    rep_rebuy = SalesAnalytics.get_representative_repurchase_rate(df)
+    monthly_evolution = SalesAnalytics.get_representative_monthly_evolution(df)
+    meta_df = SalesAnalytics.get_representative_meta(df)
+
+    if summary.empty:
+        st.info("Nenhum dado de representante disponível nos dados filtrados.")
+        return
+
+    # Merge rep metrics with repurchase and meta if available
+    if not rep_rebuy.empty:
+        # rep_rebuy contains columns: Representante, Clientes_Recorrentes, Clientes_Total, Recompra (%)
+        rep_rebuy_subset = rep_rebuy[[col for col in ["Representante", "Clientes_Recorrentes", "Clientes_Total", "Recompra (%)"] if col in rep_rebuy.columns]]
+        summary = summary.merge(rep_rebuy_subset, on="Representante", how="left")
+    if not meta_df.empty:
+        summary = summary.merge(meta_df, on="Representante", how="left")
+        summary["Atingimento (%)"] = summary.apply(
+            lambda row: row["Receita_Total"] / row["Meta_Valor"] * 100 if row["Meta_Valor"] > 0 else 0.0,
+            axis=1
+        )
+
+    summary = summary.sort_values(by="Receita_Total", ascending=False).reset_index(drop=True)
+    total_revenue = summary["Receita_Total"].sum()
+    total_clients = summary["Clientes_Unicos"].sum()
+    total_orders = summary["Pedidos"].sum()
+    total_products = summary["Produtos_Distintos"].sum()
+
+    c1, c2, c3, c4, c5 = st.columns(5)
+    with c1:
+        metric_card("Faturamento Total", f"R$ {total_revenue:,.2f}", delta="Receita", delta_type="up")
+    with c2:
+        metric_card("Representantes Ativos", f"{len(summary):,}", delta="Força Comercial")
+    with c3:
+        metric_card("Clientes Atendidos", f"{total_clients:,}", delta="Clientes Únicos")
+    with c4:
+        metric_card("Pedidos Totais", f"{total_orders:,}", delta="Pedidos")
+    with c5:
+        metric_card("Mix de Produtos", f"{int(summary['Produtos_Distintos'].max()):,}", delta="SKU distintos")
+
+    st.markdown("<div style='margin: 1rem 0;'></div>", unsafe_allow_html=True)
+
+    # High-level rep overview
+    top_rep = summary.iloc[0]
+    st.markdown(f"**Melhor Representante:** {top_rep['Representante']} com faturamento de R$ {top_rep['Receita_Total']:,.2f} ({top_rep['Participacao (%)']:.1f}%)")
+
+    # Revenue ranking chart
+    chart_container("Ranking de Representantes por Faturamento", "Comparativo de receita por representante")
+    fig_rank = px.bar(
+        summary,
+        x="Receita_Total",
+        y="Representante",
+        orientation="h",
+        text="Receita_Total",
+        labels={"Receita_Total": "Faturamento (R$)", "Representante": "Representante"},
+        color="Participacao (%)",
+        color_continuous_scale="Blues"
+    )
+    fig_rank.update_traces(texttemplate="R$ %{x:,.0f}", textposition="outside")
+    fig_rank.update_layout(get_plot_layout(is_dark), margin=dict(l=120, r=40, t=30, b=40), yaxis=dict(autorange="reversed"))
+    st.plotly_chart(fig_rank, use_container_width=True, config={"displayModeBar": False})
+    chart_container_end()
+
+    # Summary table
+    st.markdown("#### Indicadores por Representante")
+    table_cols = [
+        "Representante",
+        "Receita_Total",
+        "Clientes_Unicos",
+        "Pedidos",
+        "Ticket_Medio",
+        "Pedidos_por_Cliente",
+        "Participacao (%)",
+        "Produtos_Distintos"
+    ]
+    if "Atingimento (%)" in summary.columns:
+        table_cols.append("Atingimento (%)")
+    custom_table(summary[table_cols].rename(columns={
+        "Receita_Total": "Receita Total",
+        "Clientes_Unicos": "Clientes Atendidos",
+        "Pedidos": "Pedidos",
+        "Ticket_Medio": "Ticket Médio",
+        "Pedidos_por_Cliente": "Pedidos por Cliente",
+        "Participacao (%)": "% Participação",
+        "Produtos_Distintos": "Produtos Distintos",
+        "Atingimento (%)": "% Atingimento"
+    }), {
+        "Representante": "Representante",
+        "Receita Total": "Receita Total",
+        "Clientes Atendidos": "Clientes Atendidos",
+        "Pedidos": "Pedidos",
+        "Ticket Médio": "Ticket Médio",
+        "Pedidos por Cliente": "Pedidos por Cliente",
+        "% Participação": "% Participação",
+        "Produtos Distintos": "Produtos Distintos",
+        "% Atingimento": "% Atingimento"
+    })
+
+    # Monthly evolution
+    chart_container("Evolução Mensal de Vendas por Representante", "Tendência temporal de receita por representante")
+    if not monthly_evolution.empty:
+        fig_evo = px.line(
+            monthly_evolution,
+            x="Mes",
+            y="Receita_Total",
+            color="Representante",
+            markers=True,
+            labels={"Mes": "Mês", "Receita_Total": "Receita (R$)"}
+        )
+        fig_evo.update_layout(get_plot_layout(is_dark), margin=dict(l=40, r=40, t=30, b=40))
+        st.plotly_chart(fig_evo, use_container_width=True, config={"displayModeBar": False})
+    else:
+        st.info("Não foi possível gerar a evolução mensal porque não há coluna de data reconhecida no conjunto de dados.")
+    chart_container_end()
+
+
 def render_products(df: pd.DataFrame, is_dark: bool) -> None:
     """Renders the product analytics tab including Top Products, Pareto and ABC Curve."""
     st.markdown("### Análise de Produtos")
