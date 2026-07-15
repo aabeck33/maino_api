@@ -297,6 +297,182 @@ def render_orders(df: pd.DataFrame, is_dark: bool) -> None:
             """, unsafe_allow_html=True)
 
 
+def render_geography(df: pd.DataFrame, is_dark: bool) -> None:
+    """Renders geographic revenue and customer distribution analytics."""
+    st.markdown("### Geografia de Vendas")
+    
+    state_clients = SalesAnalytics.get_clients_by_state(df)
+    state_revenue = SalesAnalytics.get_state_revenue(df)
+    state_ticket = SalesAnalytics.get_state_ticket_average(df)
+    top_cities_revenue = SalesAnalytics.get_top_cities_by_revenue(df)
+    top_cities_customers = SalesAnalytics.get_top_cities_by_customers(df)
+    state_geo = SalesAnalytics.get_state_geo_coordinates(df)
+    
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        metric_card("Estados com Clientes", f"{len(state_clients):,}", delta="Cobertura Regional")
+    with c2:
+        metric_card("Estados com Receita", f"{len(state_revenue):,}", delta="Estados Ativos")
+    with c3:
+        metric_card("Cidades com Receita", f"{len(top_cities_revenue):,}", delta="Top 10 visível")
+
+    st.markdown("<div style='margin: 1.5rem 0;'></div>", unsafe_allow_html=True)
+
+    chart_container("Receita por Estado", "Valor total faturado por UF")
+    if not state_revenue.empty:
+        fig_state_rev = px.bar(
+            state_revenue,
+            x="UF",
+            y="Valor_Total",
+            labels={"UF": "Estado", "Valor_Total": "Receita Total"},
+            color="Valor_Total",
+            color_continuous_scale="Blues",
+            text_auto=",.0f"
+        )
+        fig_state_rev.update_layout(get_plot_layout(is_dark))
+        fig_state_rev.update_yaxes(tickformat=",.0f")
+        st.plotly_chart(fig_state_rev, use_container_width=True, config={"displayModeBar": False})
+    else:
+        st.info("Não há dados de faturamento por estado disponíveis.")
+    chart_container_end()
+
+    chart_container("Clientes por Estado (UF)", "Quantidade de clientes compradores por estado")
+    if not state_clients.empty:
+        df_clients_pct = state_clients.copy()
+        total_clients = df_clients_pct["Clientes"].sum()
+        df_clients_pct["Participação Clientes (%)"] = df_clients_pct["Clientes"] / total_clients * 100 if total_clients > 0 else 0.0
+        fig_clients = px.bar(
+            df_clients_pct.sort_values("Clientes", ascending=False),
+            x="UF",
+            y="Clientes",
+            labels={"UF": "Estado", "Clientes": "Clientes Compradores"},
+            text_auto=True,
+            color="Clientes",
+            color_continuous_scale="Viridis"
+        )
+        fig_clients.update_layout(get_plot_layout(is_dark))
+        st.plotly_chart(fig_clients, use_container_width=True, config={"displayModeBar": False})
+        custom_table(
+            df_clients_pct[["UF", "Clientes", "Participação Clientes (%)"]].sort_values("Clientes", ascending=False),
+            columns_mapping={"UF": "UF", "Clientes": "Clientes Compradores", "Participação Clientes (%)": "% Participação"}
+        )
+    else:
+        st.info("Não há dados de clientes por estado disponíveis.")
+    chart_container_end()
+
+    chart_container("Ticket Médio por Estado", "Faturamento total dividido pela quantidade de clientes compradores")
+    if not state_ticket.empty:
+        fig_ticket = px.bar(
+            state_ticket,
+            x="UF",
+            y="Ticket Médio",
+            labels={"UF": "Estado", "Ticket Médio": "Ticket Médio (R$)"},
+            text_auto=",.0f",
+            color="Ticket Médio",
+            color_continuous_scale="Cividis"
+        )
+        fig_ticket.update_layout(get_plot_layout(is_dark))
+        st.plotly_chart(fig_ticket, use_container_width=True, config={"displayModeBar": False})
+        custom_table(
+            state_ticket[["UF", "Clientes", "Valor_Total", "Ticket Médio", "Participação Clientes (%)", "Participação Receita (%)"]].rename(
+                columns={
+                    "Valor_Total": "Receita Total"
+                }
+            ),
+            columns_mapping={
+                "UF": "UF",
+                "Clientes": "Clientes Compradores",
+                "Receita Total": "Receita Total",
+                "Ticket Médio": "Ticket Médio",
+                "Participação Clientes (%)": "% Clientes",
+                "Participação Receita (%)": "% Receita"
+            }
+        )
+    else:
+        st.info("Não há dados de ticket médio por estado disponíveis.")
+    chart_container_end()
+
+    chart_container("Top 10 Cidades por Faturamento", "As cidades que mais contribuem para a receita")
+    if not top_cities_revenue.empty:
+        fig_top_city_rev = px.bar(
+            top_cities_revenue.sort_values("Valor_Total", ascending=True),
+            x="Valor_Total",
+            y="Cidade",
+            orientation="h",
+            labels={"Valor_Total": "Receita Total", "Cidade": "Cidade"},
+            color="Valor_Total",
+            color_continuous_scale="Oranges",
+            text_auto=",.0f"
+        )
+        fig_top_city_rev.update_layout(get_plot_layout(is_dark))
+        st.plotly_chart(fig_top_city_rev, use_container_width=True, config={"displayModeBar": False})
+    chart_container_end()
+
+    chart_container("Top 10 Cidades por Clientes", "As cidades com maior base de compradores")
+    if not top_cities_customers.empty:
+        fig_top_city_cust = px.bar(
+            top_cities_customers.sort_values("Clientes", ascending=True),
+            x="Clientes",
+            y="Cidade",
+            orientation="h",
+            labels={"Clientes": "Clientes Compradores", "Cidade": "Cidade"},
+            color="Clientes",
+            color_continuous_scale="Blues",
+            text_auto=True
+        )
+        fig_top_city_cust.update_layout(get_plot_layout(is_dark))
+        st.plotly_chart(fig_top_city_cust, use_container_width=True, config={"displayModeBar": False})
+    chart_container_end()
+
+    chart_container("Mapa de Calor Geográfico por Estado", "Visualização de concentração regional de receita")
+    if not state_geo.empty:
+        fig_map = px.scatter_geo(
+            state_geo,
+            lat="Latitude",
+            lon="Longitude",
+            color="Valor_Total",
+            size="Valor_Total",
+            hover_name="UF",
+            hover_data={
+                "Clientes": True,
+                "Ticket Médio": ":.2f",
+                "Valor_Total": ":,.0f",
+                "Latitude": False,
+                "Longitude": False,
+            },
+            projection="natural earth",
+            color_continuous_scale="reds",
+            title="",
+        )
+        fig_map.update_geos(fitbounds="locations", visible=False)
+        fig_map.update_layout(get_plot_layout(is_dark))
+        st.plotly_chart(fig_map, use_container_width=True, config={"displayModeBar": False})
+    else:
+        st.info("O mapa geográfico não pôde ser gerado porque não há coordenadas válidas para os estados.")
+    chart_container_end()
+
+    chart_container("Participação de Cada Estado na Receita Total", "Percentual do faturamento por UF")
+    if not state_ticket.empty:
+        fig_state_share = px.pie(
+            state_ticket,
+            values="Participação Receita (%)",
+            names="UF",
+            hole=0.45,
+            color_discrete_sequence=px.colors.sequential.Plasma
+        )
+        fig_state_share.update_layout(get_plot_layout(is_dark))
+        st.plotly_chart(fig_state_share, use_container_width=True, config={"displayModeBar": False})
+    chart_container_end()
+
+    st.markdown("<div style='margin: 1.25rem 0;'></div>", unsafe_allow_html=True)
+    st.markdown("#### Observações Importantes")
+    st.markdown("""
+    - Os valores de UF são inferidos primeiro a partir dos dados da nota fiscal, com fallback para o CEP quando necessário.
+    - O mapa geográfico é construído internamente usando centroides de estados brasileiros, sem qualquer serviço externo.
+    - Quando a cidade não está disponível na nota fiscal, o estado ainda é utilizado para análise regional.
+    """, unsafe_allow_html=True)
+
+
 def render_fiscal(df: pd.DataFrame, is_dark: bool) -> None:
     """Renders the fiscal status and invoice compliance tab."""
     st.markdown("### Painel de Conformidade Fiscal")

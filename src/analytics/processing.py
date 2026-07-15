@@ -9,7 +9,10 @@
 
 from pathlib import Path
 from typing import Dict, Any, Tuple
+import unicodedata
 import pandas as pd
+
+from utils.geo import BRAZIL_STATE_CENTROIDS, map_cep_to_uf
 
 class SalesAnalytics:
     """
@@ -43,18 +46,31 @@ class SalesAnalytics:
 
         return df
 
+    @staticmethod
+    def _normalize_status(status: Any) -> str:
+        if status is None:
+            return ""
+
+        text = str(status).strip().upper()
+        text = unicodedata.normalize("NFKD", text)
+        text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+        return text
+
     def get_filtered_data(self, status_filter: str = "Todos", search_product: str = "") -> pd.DataFrame:
         """Applies global filters to the raw DataFrame."""
         filtered_df = self.df.copy()
 
         # Filter by Invoice Status
         if status_filter != "Todos":
+            normalized_status = filtered_df["Status da Nota Fiscal"].apply(SalesAnalytics._normalize_status)
+            non_emitted = normalized_status.isin(["NAO_TRANSMITIDA", "NAO EMITIDA"])
+
             if status_filter == "Com NF Emitida":
-                filtered_df = filtered_df[filtered_df["Status da Nota Fiscal"] != "NAO_TRANSMITIDA"]
+                filtered_df = filtered_df[~non_emitted]
             elif status_filter == "Sem NF Emitida":
-                filtered_df = filtered_df[filtered_df["Status da Nota Fiscal"] == "NAO_TRANSMITIDA"]
+                filtered_df = filtered_df[non_emitted]
             else:
-                filtered_df = filtered_df[filtered_df["Status da Nota Fiscal"] == status_filter]
+                filtered_df = filtered_df[filtered_df["Status da Nota Fiscal"].apply(SalesAnalytics._normalize_status) == SalesAnalytics._normalize_status(status_filter)]
 
         # Search by Product Code
         if search_product:
@@ -83,7 +99,8 @@ class SalesAnalytics:
 
         # Invoice stats are calculated on unique orders to represent real fiscal volume
         df_unique_orders = df.drop_duplicates(subset=["Pedido ID"])
-        orders_without_nf = df_unique_orders[df_unique_orders["Status da Nota Fiscal"] == "NAO_TRANSMITIDA"]["Pedido ID"].count()
+        normalized_status = df_unique_orders["Status da Nota Fiscal"].apply(SalesAnalytics._normalize_status)
+        orders_without_nf = df_unique_orders[normalized_status.isin(["NAO_TRANSMITIDA", "NAO EMITIDA"])]["Pedido ID"].count()
         orders_with_nf = total_orders - orders_without_nf
 
         nf_emission_rate = (orders_with_nf / total_orders * 100) if total_orders > 0 else 0.0
@@ -180,3 +197,126 @@ class SalesAnalytics:
         df_fiscal["Percentual (%)"] = (df_fiscal["Quantidade"] / total_orders * 100) if total_orders > 0 else 0.0
 
         return df_fiscal
+
+    @staticmethod
+    def _normalize_geo_data(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return df.copy()
+
+        normalized = df.copy()
+        normalized["CEP"] = normalized["CEP"].astype(str).str.strip().fillna("")
+        if "UF" not in normalized.columns:
+            normalized["UF"] = "N/A"
+        if "Cidade" not in normalized.columns:
+            normalized["Cidade"] = "N/A"
+        if "Valor Total" not in normalized.columns:
+            normalized["Valor Total"] = 0.0
+
+        normalized["UF"] = normalized["UF"].astype(str).str.strip().str.upper().replace({"": "N/A", "NONE": "N/A", "N/A": "N/A"})
+        normalized["Cidade"] = normalized["Cidade"].astype(str).str.strip().replace({"": "N/A", "None": "N/A", "nan": "N/A"})
+        normalized.loc[normalized["Cidade"] == "", "Cidade"] = "N/A"
+        normalized["Valor Total"] = pd.to_numeric(normalized["Valor Total"], errors="coerce").fillna(0.0)
+
+        def resolve_uf(row: pd.Series) -> str:
+            if row["UF"] not in {"", "N/A", "NONE"}:
+                return row["UF"]
+            return map_cep_to_uf(row["CEP"])
+
+        normalized["UF"] = normalized.apply(resolve_uf, axis=1)
+        normalized.loc[normalized["UF"] == "", "UF"] = "N/A"
+        normalized["Cidade"] = normalized["Cidade"].replace({"": "N/A"})
+
+        return normalized
+
+    @staticmethod
+    def _build_order_summary(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return pd.DataFrame()
+
+        normalized = SalesAnalytics._normalize_geo_data(df)
+        summary = normalized.groupby(["Pedido ID", "Número do Pedido"], dropna=False, as_index=False).agg(
+            CEP=("CEP", "first"),
+            UF=("UF", lambda values: next((v for v in values if v not in {"", "N/A"}), "N/A")),
+            Cidade=("Cidade", lambda values: next((v for v in values if v not in {"", "N/A"}), "N/A")),
+            Valor_Total=("Valor Total", "first"),
+            Status_da_Nota_Fiscal=("Status da Nota Fiscal", "first")
+        )
+        summary["Valor_Total"] = pd.to_numeric(summary["Valor_Total"], errors="coerce").fillna(0.0)
+        return summary
+
+    @staticmethod
+    def get_revenue_by_city(df: pd.DataFrame) -> pd.DataFrame:
+        orders = SalesAnalytics._build_order_summary(df)
+        if orders.empty:
+            return pd.DataFrame()
+
+        result = orders.groupby("Cidade", dropna=False, as_index=False).agg(
+            Valor_Total=("Valor_Total", "sum"),
+            Clientes=("Pedido ID", "nunique")
+        )
+        return result.sort_values("Valor_Total", ascending=False)
+
+    @staticmethod
+    def get_clients_by_state(df: pd.DataFrame) -> pd.DataFrame:
+        orders = SalesAnalytics._build_order_summary(df)
+        if orders.empty:
+            return pd.DataFrame()
+
+        result = orders.groupby("UF", dropna=False, as_index=False).agg(
+            Clientes=("Pedido ID", "nunique")
+        )
+        return result.sort_values("Clientes", ascending=False)
+
+    @staticmethod
+    def get_state_revenue(df: pd.DataFrame) -> pd.DataFrame:
+        orders = SalesAnalytics._build_order_summary(df)
+        if orders.empty:
+            return pd.DataFrame()
+
+        result = orders.groupby("UF", dropna=False, as_index=False).agg(
+            Valor_Total=("Valor_Total", "sum"),
+            Clientes=("Pedido ID", "nunique")
+        )
+        return result.sort_values("Valor_Total", ascending=False)
+
+    @staticmethod
+    def get_state_ticket_average(df: pd.DataFrame) -> pd.DataFrame:
+        state_df = SalesAnalytics.get_state_revenue(df)
+        if state_df.empty:
+            return pd.DataFrame()
+
+        state_df["Ticket Médio"] = state_df.apply(
+            lambda row: row["Valor_Total"] / row["Clientes"] if row["Clientes"] > 0 else 0.0,
+            axis=1
+        )
+        state_df["Participação Clientes (%)"] = (
+            state_df["Clientes"] / state_df["Clientes"].sum() * 100
+        )
+        state_df["Participação Receita (%)"] = (
+            state_df["Valor_Total"] / state_df["Valor_Total"].sum() * 100
+        )
+        return state_df.sort_values("Ticket Médio", ascending=False)
+
+    @staticmethod
+    def get_top_cities_by_revenue(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
+        city_revenue = SalesAnalytics.get_revenue_by_city(df)
+        return city_revenue.head(top_n)
+
+    @staticmethod
+    def get_top_cities_by_customers(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
+        city_data = SalesAnalytics.get_revenue_by_city(df)
+        return city_data.sort_values("Clientes", ascending=False).head(top_n)
+
+    @staticmethod
+    def get_state_geo_coordinates(df: pd.DataFrame) -> pd.DataFrame:
+        state_df = SalesAnalytics.get_state_ticket_average(df)
+        if state_df.empty:
+            return pd.DataFrame()
+
+        coords = []
+        for uf in state_df["UF"]:
+            coords.append(BRAZIL_STATE_CENTROIDS.get(uf, (None, None)))
+
+        state_df["Latitude"] = [c[0] for c in coords]
+        state_df["Longitude"] = [c[1] for c in coords]
+        return state_df[state_df["Latitude"].notna() & state_df["Longitude"].notna()].copy()
