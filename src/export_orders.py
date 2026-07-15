@@ -11,6 +11,8 @@ from urllib3.util import Retry
 from openpyxl import Workbook
 from dotenv import load_dotenv
 
+from utils.geo import find_value_by_keys, map_cep_to_uf, normalize_cep, safe_float
+
 # Set up logging configuration
 logging.basicConfig(
     level=logging.INFO,
@@ -87,29 +89,52 @@ def fetch_invoice(session: requests.Session, order_id: str, token: str) -> Dict[
         
         # 404 explicitly indicates the invoice does not exist/was not found for this order
         if response.status_code == 404:
-            return {"id": "N/A", "status": "Não emitida", "danfe_url": "N/A", "CEP": "N/A"}
-            
+            return {
+                "id": "N/A",
+                "status": "Não emitida",
+                "danfe_url": "N/A",
+            }
         response.raise_for_status()
         
         data = response.json()
         nf = data.get("nota_fiscal")
         if not nf or not isinstance(nf, dict):
-            return {"id": "N/A", "status": "Não emitida", "danfe_url": "N/A", "CEP": "N/A"}
-            
+            return {
+                "id": "N/A",
+                "status": "Não emitida",
+                "danfe_url": "N/A",
+            }
+
         return {
             "id": nf.get("id") or "N/A",
             "status": nf.get("status") or "Não emitida",
             "danfe_url": nf.get("danfe_url") or "N/A",
-            "CEP": nf.get("CEP") or "N/A"
         }
     except requests.exceptions.HTTPError as e:
         if e.response is not None and e.response.status_code == 404:
-            return {"id": "N/A", "status": "Não emitida", "danfe_url": "N/A", "CEP": "N/A"}
+            return {
+                "id": "N/A",
+                "status": "Não emitida",
+                "danfe_url": "N/A",
+            }
         logger.error(f"Erro HTTP ao buscar nota fiscal do pedido {order_id}: {e}")
         raise
     except Exception as e:
         logger.error(f"Erro inesperado ao buscar nota fiscal do pedido {order_id}: {e}")
         raise
+
+
+def compute_order_total_from_parcels(order: Dict[str, Any]) -> float:
+    """Sums the parcel values defined under order['cobranca']['parcelas']."""
+    cobranca = order.get("cobranca") or {}
+    parcelas = cobranca.get("parcelas") or []
+    total = 0.0
+
+    if isinstance(parcelas, list):
+        for parcela in parcelas:
+            total += safe_float(find_value_by_keys(parcela, ["valor", "valor_parcela", "amount"]))
+
+    return total
 
 
 def fetch_orders_page(session: requests.Session, page: int, token: str, status: str) -> Dict[str, Any]:
@@ -160,6 +185,15 @@ def process_orders_and_invoices(session: requests.Session, token: str, status: s
             order_id = order.get("id")
             order_number = order.get("numero")
             order_status = order.get("status")
+            order_cep = normalize_cep(
+                order.get("cep")
+                or find_value_by_keys(order.get("cliente") or {}, ["cep"])
+                or ""
+            )
+            order_city = str(
+                find_value_by_keys(order.get("cliente") or {}, ["municipio", "municipio_ibge"])
+                or ""
+            ).strip() or "N/A"
             items = order.get("itens") or []
 
             # If order has no items, we skip or add a row with empty items?
@@ -180,7 +214,12 @@ def process_orders_and_invoices(session: requests.Session, token: str, status: s
             invoice_id = invoice_info["id"]
             invoice_status = invoice_info["status"]
             url_nfe = invoice_info["danfe_url"]
-            cep = invoice_info["CEP"]
+            order_total = compute_order_total_from_parcels(order)
+            effective_total = order_total
+
+            effective_cep = order_cep or "N/A"
+            effective_uf = map_cep_to_uf(effective_cep)
+            effective_city = order_city
 
             for item in items:
                 extracted_rows.append({
@@ -192,7 +231,10 @@ def process_orders_and_invoices(session: requests.Session, token: str, status: s
                     "ID da Nota Fiscal": invoice_id,
                     "Status da Nota Fiscal": invoice_status,
                     "URL NFe": url_nfe,
-                    "CEP": cep
+                    "CEP": effective_cep,
+                    "UF": effective_uf,
+                    "Cidade": effective_city,
+                    "Valor Total": effective_total,
                 })
 
         pagination = data.get("pagination") or {}
@@ -217,7 +259,10 @@ def save_to_excel(rows: List[Dict[str, Any]], filepath: Path) -> None:
         "ID da Nota Fiscal",
         "Status da Nota Fiscal",
         "URL NFe",
-        "CEP"
+        "CEP",
+        "UF",
+        "Cidade",
+        "Valor Total",
     ]
     
     workbook = Workbook()

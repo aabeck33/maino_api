@@ -144,5 +144,50 @@ class TestFiltering(unittest.TestCase):
         self.assertEqual(len(result), len(self.analytics.df))
 
 
+class TestGeoAnalytics(unittest.TestCase):
+    def setUp(self):
+        self.df = pd.DataFrame({
+            "Pedido ID": ["p1", "p2", "p3", "p4"],
+            "Número do Pedido": ["001", "002", "003", "004"],
+            "CEP": ["13044-480", "20010-000", "60000-000", "99900-000"],
+            "UF": ["SP", "RJ", "CE", "RS"],
+            "Cidade": ["Campinas", "Rio de Janeiro", "Fortaleza", "Porto Alegre"],
+            "Valor Total": [1000.0, 500.0, 800.0, 200.0],
+            "Status da Nota Fiscal": ["ACEITA", "ACEITA", "NAO_TRANSMITIDA", "ACEITA"],
+        })
+
+    def test_revenue_by_city(self):
+        result = SalesAnalytics.get_revenue_by_city(self.df)
+        self.assertEqual(result.iloc[0]["Cidade"], "Campinas")
+        self.assertEqual(result.iloc[0]["Valor_Total"], 1000.0)
+        self.assertEqual(result.iloc[0]["Clientes"], 1)
+
+    def test_clients_by_state(self):
+        result = SalesAnalytics.get_clients_by_state(self.df)
+        self.assertEqual(set(result["UF"]), {"SP", "RJ", "CE", "RS"})
+        self.assertEqual(result.loc[result["UF"] == "SP", "Clientes"].iloc[0], 1)
+
+    def test_state_revenue(self):
+        result = SalesAnalytics.get_state_revenue(self.df)
+        self.assertEqual(result.iloc[0]["UF"], "SP")
+        self.assertEqual(result.iloc[0]["Valor_Total"], 1000.0)
+
+    def test_ticket_average(self):
+        result = SalesAnalytics.get_state_ticket_average(self.df)
+        self.assertAlmostEqual(result.loc[result["UF"] == "SP", "Ticket Médio"].iloc[0], 1000.0)
+        self.assertAlmostEqual(result.loc[result["UF"] == "SP", "Participação Clientes (%)"].iloc[0], 25.0)
+
+    def test_top_cities(self):
+        top_revenue = SalesAnalytics.get_top_cities_by_revenue(self.df, top_n=2)
+        self.assertEqual(len(top_revenue), 2)
+        self.assertEqual(top_revenue.iloc[0]["Cidade"], "Campinas")
+
+    def test_state_geo_coordinates(self):
+        result = SalesAnalytics.get_state_geo_coordinates(self.df)
+        self.assertIn("Latitude", result.columns)
+        self.assertIn("Longitude", result.columns)
+        self.assertGreater(len(result), 0)
+
+
 if __name__ == "__main__":
     unittest.main()
