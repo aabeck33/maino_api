@@ -55,13 +55,64 @@ def apply_css(is_dark: bool) -> None:
             display: none !important;
         }}
 
+        /* Sidebar styling adjustments */
+        [data-testid="stSidebar"] {{
+            background-color: var(--bg-subtle) !important;
+            color: var(--text) !important;
+        }}
+        [data-testid="stSidebar"] * {{
+            color: var(--text) !important;
+        }}
+        [data-testid="stSidebar"] a,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] span,
+        [data-testid="stSidebar"] button {{
+            color: var(--text) !important;
+        }}
+
         /* Application Layout */
         html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"], .main, .block-container, section[data-testid="stMain"] {{
             background-color: var(--bg) !important;
             color: var(--text) !important;
             font-family: 'DM Sans', -apple-system, sans-serif !important;
         }}
-        
+
+        /* Ensure text in light theme is always readable */
+        [data-testid="stAppViewContainer"] *,
+        .stMarkdown, .stMarkdown *,
+        .stText, .stText *,
+        .stButton>button,
+        button,
+        label,
+        a,
+        span,
+        li,
+        td,
+        th,
+        p,
+        div,
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6 {{
+            color: var(--text) !important;
+        }}
+
+        .stButton>button,
+        input,
+        select,
+        textarea,
+        .stTextInput>div,
+        .stNumberInput>div,
+        .stSelectbox>div,
+        .stCheckbox, .stRadio {{
+            color: var(--text) !important;
+            background-color: var(--card) !important;
+            border-color: var(--border) !important;
+        }}
+
         .block-container {{
             padding: 2.5rem 3rem !important;
             max-width: 1400px !important;

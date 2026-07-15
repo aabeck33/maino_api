@@ -2,8 +2,10 @@
 
 Este projeto oferece duas soluções complementares sobre os dados da plataforma ERP Mainô:
 
-1. **Extrator de Pedidos** — consulta a API do Mainô e gera uma planilha Excel com os pedidos de venda e notas fiscais.
+1. **Extrator de Pedidos** — consulta a API do Mainô e gera uma planilha Excel com os pedidos de venda, cliente e dados fiscais.
 2. **Dashboard Executivo** — lê a planilha gerada e exibe um painel interativo de inteligência de negócios para apresentação à diretoria.
+
+O dashboard inclui análises geográficas por estado e cidade, usando centroídes de UF e inferência de UF por CEP sem dependência de APIs externas.
 
 ---
 
@@ -12,11 +14,11 @@ Este projeto oferece duas soluções complementares sobre os dados da plataforma
 | Critério | Escolha |
 |---|---|
 | **Linguagem única** | Python puro — sem frontend separado |
-| **Velocidade de desenvolvimento** | Dashboard completo em poucas horas |
-| **Interatividade nativa** | Filtros, sliders e downloads sem JavaScript |
-| **Qualidade gráfica** | Plotly oferece gráficos de nível corporativo (hover, zoom, export PNG) |
-| **Distribuição interna** | Basta enviar o projeto + `streamlit run src/app.py` |
-| **Manutenção** | Qualquer membro da equipe que saiba Python pode alterar o dashboard |
+| **Velocidade de desenvolvimento** | Interface pronta em poucas horas |
+| **Interatividade nativa** | Filtros, tabs, exportação e tema sem JavaScript |
+| **Qualidade gráfica** | Plotly oferece gráficos corporativos com hover e zoom |
+| **Distribuição interna** | Basta executar `streamlit run src/app.py` |
+| **Manutenção** | Qualquer membro da equipe que saiba Python pode alterar facilmente |
 
 ---
 
@@ -27,14 +29,15 @@ Maino_API/
 ├── src/
 │   ├── app.py                        # Entrypoint do Dashboard Executivo
 │   ├── analytics/
-│   │   └── processing.py             # Cálculo de KPIs, ABC, Pareto, estatísticas
+│   │   └── processing.py             # Cálculo de KPIs, ABC, Pareto, estatísticas e geografia
 │   ├── dashboard/
-│   │   ├── components.py             # CSS, cards KPI, tabelas HTML, cabeçalho
+│   │   ├── components.py             # CSS, cards KPI, tabelas HTML e cabeçalho
 │   │   └── views.py                  # Renderização de cada aba do dashboard
 │   ├── utils/
+│   │   ├── geo.py                    # Helpers de CEP, mapeamento UF e normalização numérica
 │   │   └── logger.py                 # Logging centralizado
 │   ├── export_ncms.py                # Extrator de NCMs (script legado)
-│   └── export_orders.py              # Extrator de Pedidos de Venda
+│   └── export_orders.py              # Extrator de Pedidos de Venda e geração de Excel
 │
 ├── tests/
 │   ├── test_analytics.py             # Testes unitários do módulo de analytics
@@ -119,17 +122,18 @@ python src/export_ncms.py
 
 | Aba | Conteúdo |
 |---|---|
-| 📈 **Visão Geral** | 6 KPIs em cards (pedidos, volume, produtos únicos, compliance fiscal), top 5 produtos |
-| 📦 **Produtos** | Top 10/20 produtos (barra horizontal), Gráfico de Pareto, Curva ABC (classificação A/B/C) |
-| 🛒 **Pedidos** | Estatísticas de distribuição (média, mediana, min, max), histograma, boxplot, ranking dos maiores pedidos |
-| ⚖️ **Fiscal** | Gauge de taxa de emissão de NF, donut chart por status, KPI cards de compliance |
-| 💡 **Insights Gerenciais** | Narrativas automáticas sobre produto líder, concentração de vendas, gestão ABC e compliance fiscal |
+| 📈 **Visão Geral** | KPIs de pedidos, volume, produtos únicos, compliance fiscal e top 5 produtos |
+| 📦 **Produtos** | Ranking de produtos, Gráfico de Pareto e Curva ABC |
+| 🛒 **Pedidos** | Estatísticas de pedido, histograma, boxplot e ranking dos maiores pedidos |
+| 🌍 **Geo** | Receita por estado, clientes por estado, ticket médio, top cidades e mapa de calor regional |
+| ⚖️ **Fiscal** | Gauge de emissão de NF, distribuição por status e indicadores de compliance |
+| 💡 **Insights Gerenciais** | Narrativas automáticas sobre concentração de receita e performance fiscal |
 
 ### Filtros Globais (barra lateral)
 
 - **Status da Nota Fiscal**: Todos / Com NF Emitida / Sem NF Emitida
 - **Pesquisa por Produto**: Filtra por código do produto em tempo real
-- **Exportar para Excel**: Baixa os dados conforme os filtros aplicados
+- **Exportar para Excel**: Baixa os dados filtrados
 - **Tema**: Alterna entre modo claro ☀️ e modo escuro 🌙
 
 ---
@@ -137,10 +141,10 @@ python src/export_ncms.py
 ## Testes
 
 ```bash
-# Testes do módulo de analytics (22 casos)
+# Testes do módulo de analytics
 python -m unittest tests/test_analytics.py -v
 
-# Testes do extrator de pedidos (6 casos)
+# Testes do extrator de pedidos
 python -m unittest tests/test_export_orders.py -v
 ```
 
@@ -157,4 +161,8 @@ python -m unittest tests/test_export_orders.py -v
 | `Quantidade` | Quantidade de unidades do item |
 | `ID da Nota Fiscal` | UUID da NF-e ou `N/A` |
 | `Status da Nota Fiscal` | `ACEITA`, `Não emitida`, etc. |
-| `URL NFe` | url para abrir a visualização da DANFE |
+| `URL NFe` | URL para visualização da DANFE |
+| `CEP` | CEP do cliente usado para geografia e inferência de UF |
+| `UF` | Unidade federativa do cliente |
+| `Cidade` | Município ou cidade do cliente |
+| `Valor Total` | Total do pedido somando todas as parcelas de cobrança |

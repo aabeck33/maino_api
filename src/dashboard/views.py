@@ -432,6 +432,7 @@ def render_geography(df: pd.DataFrame, is_dark: bool) -> None:
             lon="Longitude",
             color="Valor_Total",
             size="Valor_Total",
+            size_max=40,
             hover_name="UF",
             hover_data={
                 "Clientes": True,
@@ -444,7 +445,20 @@ def render_geography(df: pd.DataFrame, is_dark: bool) -> None:
             color_continuous_scale="reds",
             title="",
         )
-        fig_map.update_geos(fitbounds="locations", visible=False)
+        fig_map.update_traces(marker=dict(opacity=0.85, line=dict(width=1, color="#2a2a2a")))
+        fig_map.update_geos(
+            fitbounds="locations",
+            visible=True,
+            showland=True,
+            landcolor="#f2f2f2",
+            showocean=True,
+            oceancolor="#ddeeff",
+            showcountries=True,
+            countrycolor="#7f7f7f",
+            coastlinecolor="#7f7f7f",
+            lataxis=dict(range=[-35, 10]),
+            lonaxis=dict(range=[-75, -30]),
+        )
         fig_map.update_layout(get_plot_layout(is_dark))
         st.plotly_chart(fig_map, use_container_width=True, config={"displayModeBar": False})
     else:
