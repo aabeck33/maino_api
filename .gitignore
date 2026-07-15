@@ -1,0 +1,32 @@
+# Ambiente Virtual
+.venv/
+venv/
+ENV/
+env/
+
+# Configurações locais e Segredos (NUNCA envie para o GitHub)
+.env
+.env.*
+!.env.example
+
+# Testes e Cobertura (Pytest, Unittest)
+.pytest_cache/
+.coverage
+htmlcov/
+nosetests.xml
+.htmlcov/
+
+# Caches do Python
+__pycache__/
+*.py[cod]
+*$py.class
+.cache/
+
+# Configurações de IDEs (Opcional, mas recomendado)
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
