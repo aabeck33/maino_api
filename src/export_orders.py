@@ -87,23 +87,24 @@ def fetch_invoice(session: requests.Session, order_id: str, token: str) -> Dict[
         
         # 404 explicitly indicates the invoice does not exist/was not found for this order
         if response.status_code == 404:
-            return {"id": "N/A", "status": "Não emitida", "danfe_url": "N/A"}
+            return {"id": "N/A", "status": "Não emitida", "danfe_url": "N/A", "CEP": "N/A"}
             
         response.raise_for_status()
         
         data = response.json()
         nf = data.get("nota_fiscal")
         if not nf or not isinstance(nf, dict):
-            return {"id": "N/A", "status": "Não emitida", "danfe_url": "N/A"}
+            return {"id": "N/A", "status": "Não emitida", "danfe_url": "N/A", "CEP": "N/A"}
             
         return {
             "id": nf.get("id") or "N/A",
             "status": nf.get("status") or "Não emitida",
-            "danfe_url": nf.get("danfe_url") or "N/A"
+            "danfe_url": nf.get("danfe_url") or "N/A",
+            "CEP": nf.get("CEP") or "N/A"
         }
     except requests.exceptions.HTTPError as e:
         if e.response is not None and e.response.status_code == 404:
-            return {"id": "N/A", "status": "Não emitida", "danfe_url": "N/A"}
+            return {"id": "N/A", "status": "Não emitida", "danfe_url": "N/A", "CEP": "N/A"}
         logger.error(f"Erro HTTP ao buscar nota fiscal do pedido {order_id}: {e}")
         raise
     except Exception as e:
@@ -179,6 +180,7 @@ def process_orders_and_invoices(session: requests.Session, token: str, status: s
             invoice_id = invoice_info["id"]
             invoice_status = invoice_info["status"]
             url_nfe = invoice_info["danfe_url"]
+            cep = invoice_info["CEP"]
 
             for item in items:
                 extracted_rows.append({
@@ -189,7 +191,8 @@ def process_orders_and_invoices(session: requests.Session, token: str, status: s
                     "Quantidade": item.get("quantidade"),
                     "ID da Nota Fiscal": invoice_id,
                     "Status da Nota Fiscal": invoice_status,
-                    "URL NFe": url_nfe
+                    "URL NFe": url_nfe,
+                    "CEP": cep
                 })
 
         pagination = data.get("pagination") or {}
@@ -213,7 +216,8 @@ def save_to_excel(rows: List[Dict[str, Any]], filepath: Path) -> None:
         "Quantidade",
         "ID da Nota Fiscal",
         "Status da Nota Fiscal",
-        "URL NFe"
+        "URL NFe",
+        "CEP"
     ]
     
     workbook = Workbook()

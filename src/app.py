@@ -1,13 +1,17 @@
-import streamlit as st
-import os
+"""
+    Programa principal do aplicativo Streamlit para análise de vendas e insights gerenciais.
+    Este aplicativo permite aos usuários visualizar e analisar dados de vendas, produtos,
+    pedidos e informações fiscais a partir de uma planilha Excel. Ele oferece filtros interativos,
+    exportação de dados e uma interface de usuário responsiva com suporte a temas claro e escuro.
+
+Alvaro Adriano Beck - 07/2026
+"""
+
+import sys
 import io
 from pathlib import Path
 import pandas as pd
-
-# Adjust system path to support absolute/package imports
-import sys
-ROOT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT_DIR))
+import streamlit as st
 
 from utils.logger import setup_logger
 from analytics.processing import SalesAnalytics
@@ -19,6 +23,10 @@ from dashboard.views import (
     render_fiscal,
     render_insights,
 )
+
+# Adjust system path to support absolute/package imports
+ROOT_DIR = Path(__file__).resolve().parent
+sys.path.insert(0, str(ROOT_DIR))
 
 # Caminho da Planilha de pedidos
 PLANILHA_PEDIDOS = "pedidos_confirmados.xlsx"
@@ -38,6 +46,8 @@ if "theme" not in st.session_state:
     st.session_state.theme = "light"
 
 def toggle_theme():
+    """ Toggle between light and dark themes.
+    """
     st.session_state.theme = "dark" if st.session_state.theme == "light" else "light"
 
 IS_DARK = st.session_state.theme == "dark"
@@ -47,19 +57,23 @@ apply_css(IS_DARK)
 
 # 4. In-Memory Excel converter for export
 def convert_df_to_excel(df: pd.DataFrame) -> bytes:
+    """ Convert a DataFrame to an Excel file in memory and return as bytes.
+    """
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
         df.to_excel(writer, index=False, sheet_name="Dados Filtrados")
     return output.getvalue()
 
 def main():
+    """ Main function to run the Streamlit app.
+    """
     # Load dataset
     excel_path = Path(__file__).resolve().parent.parent / "work" / PLANILHA_PEDIDOS
-    
+
     try:
         analytics = SalesAnalytics(excel_path)
     except Exception as e:
-        logger.error(f"Erro ao inicializar dados a partir do Excel: {e}", exc_info=True)
+        logger.error("Erro ao inicializar dados a partir do Excel: %s", e, exc_info=True)
         st.error(f"Não foi possível carregar a planilha de dados em: `{excel_path}`")
         st.exception(e)
         st.info("Execute o script de extração primeiro: `python src/export_orders.py`.")
@@ -67,7 +81,7 @@ def main():
 
     # 5. Sidebar Menu & Filters (Menu lateral com filtros globais)
     st.sidebar.markdown("### 🛠️ Menu de Filtros")
-    
+
     # Status NF Filter
     status_options = ["Todos", "Com NF Emitida", "Sem NF Emitida"]
     status_filter = st.sidebar.selectbox(
@@ -76,7 +90,7 @@ def main():
         index=0,
         help="Filtrar pedidos pela emissão de notas fiscais."
     )
-    
+
     # Search Product Filter
     product_search = st.sidebar.text_input(
         "Pesquisar Produto (Código):",
@@ -84,15 +98,15 @@ def main():
         placeholder="Ex: ALL1266",
         help="Filtra a base por partes do código do produto."
     )
-    
+
     # Apply Filters
     filtered_df = analytics.get_filtered_data(status_filter, product_search)
     kpis = analytics.calculate_kpis(filtered_df)
-    
+
     # Export options in sidebar
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📥 Exportação")
-    
+
     if not filtered_df.empty:
         try:
             excel_bytes = convert_df_to_excel(filtered_df)
@@ -104,11 +118,11 @@ def main():
                 use_container_width=True
             )
         except Exception as e:
-            logger.error(f"Erro ao preparar exportação para Excel: {e}")
+            logger.error("Erro ao preparar exportação para Excel: %s", e, exc_info=True)
             st.sidebar.warning("Erro ao preparar botão de exportação.")
     else:
         st.sidebar.info("Nenhum dado filtrado para exportar.")
-        
+
     st.sidebar.markdown("---")
     st.sidebar.markdown(
         f"<p style='font-size:0.72rem;color:#71717a;text-align:center;'>Total Filtro: {len(filtered_df)} linhas</p>",
@@ -126,20 +140,20 @@ def main():
         "⚖️ Fiscal", 
         "💡 Insights Gerenciais"
     ])
-    
+
     # Handle view rendering per tab
     with tabs[0]:
         render_overview(filtered_df, kpis)
-        
+
     with tabs[1]:
         render_products(filtered_df, IS_DARK)
-        
+
     with tabs[2]:
         render_orders(filtered_df, IS_DARK)
-        
+
     with tabs[3]:
         render_fiscal(filtered_df, IS_DARK)
-        
+
     with tabs[4]:
         render_insights(filtered_df, kpis)
 
