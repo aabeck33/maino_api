@@ -152,7 +152,9 @@ python -m unittest tests/test_export_orders.py -v
 |---|---|
 | `Pedido ID` | UUID único do pedido |
 | `Número do Pedido` | Número sequencial do pedido |
+| `Status do Pedido` | `Pedido gerado`, `Orçamento gerado`, etc. |
 | `Código do Produto` | Código do SKU comercializado |
 | `Quantidade` | Quantidade de unidades do item |
 | `ID da Nota Fiscal` | UUID da NF-e ou `N/A` |
 | `Status da Nota Fiscal` | `ACEITA`, `Não emitida`, etc. |
+| `URL NFe` | url para abrir a visualização da DANFE |
