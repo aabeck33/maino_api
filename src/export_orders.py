@@ -195,6 +195,7 @@ def process_orders_and_invoices(session: requests.Session, token: str, status: s
                 or ""
             ).strip() or "N/A"
             order_representative = find_value_by_keys(order.get("representante") or {}, ["nome", "name"]) or "N/A"
+            order_date = order.get("data") or "N/A"
             items = order.get("itens") or []
 
             # If order has no items, we skip or add a row with empty items?
@@ -225,6 +226,7 @@ def process_orders_and_invoices(session: requests.Session, token: str, status: s
                     "Pedido ID": order_id,
                     "Número do Pedido": order_number,
                     "Status do Pedido": order_status,
+                    "Data do Pedido": order_date,
                     "Código do Produto": item.get("codigo"),
                     "Quantidade": item.get("quantidade"),
                     "ID da Nota Fiscal": invoice_id,
@@ -254,6 +256,7 @@ def save_to_excel(rows: List[Dict[str, Any]], filepath: Path) -> None:
         "Pedido ID",
         "Número do Pedido",
         "Status do Pedido",
+        "Data do Pedido",
         "Código do Produto",
         "Quantidade",
         "ID da Nota Fiscal",
