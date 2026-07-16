@@ -3,7 +3,7 @@
 Este projeto oferece duas soluções complementares sobre os dados da plataforma ERP Mainô:
 
 1. **Extrator de Pedidos** — consulta a API do Mainô e gera uma planilha Excel com os pedidos de venda, cliente e dados fiscais.
-2. **Dashboard Executivo** — lê a planilha gerada e exibe um painel interativo de inteligência de negócios para apresentação à diretoria.
+2. **Dashboard Executivo** — lê as planilhas geradas e exibe um painel interativo de inteligência de negócios para apresentação à diretoria, incluindo indicadores financeiros, rentabilidade, ranking de produtos e análise por representante/cliente.
 
 O dashboard inclui análises geográficas por estado e cidade, usando centroídes de UF e inferência de UF por CEP sem dependência de APIs externas.
 
@@ -110,6 +110,10 @@ streamlit run src/app.py
 
 Acesse no navegador: **http://localhost:8501**
 
+O painel gera automaticamente arquivos de resultado em [work](work), incluindo:
+- [work/indicadores_financeiros.xlsx](work/indicadores_financeiros.xlsx) com a base detalhada de rentabilidade
+- [work/indicadores_financeiros_resumo.xlsx](work/indicadores_financeiros_resumo.xlsx) com resumos por produto, representante e cliente
+
 ### Extração de NCMs (script legado)
 
 ```bash
@@ -123,7 +127,9 @@ python src/export_ncms.py
 | Aba | Conteúdo |
 |---|---|
 | 📈 **Visão Geral** | KPIs de pedidos, volume, produtos únicos, compliance fiscal e top 5 produtos |
-| 📦 **Produtos** | Ranking de produtos, Gráfico de Pareto e Curva ABC |
+| � **Rentabilidade** | Faturamento, lucro bruto, margem bruta, ranking de produtos e curvas ABC financeiras |
+| 👥 **Representantes de Vendas** | Performance comercial por representante, receita e rentabilidade |
+| �📦 **Produtos** | Ranking de produtos, Gráfico de Pareto e Curva ABC |
 | 🛒 **Pedidos** | Estatísticas de pedido, histograma, boxplot e ranking dos maiores pedidos |
 | 🌍 **Geo** | Receita por estado, clientes por estado, ticket médio, top cidades e mapa de calor regional |
 | ⚖️ **Fiscal** | Gauge de emissão de NF, distribuição por status e indicadores de compliance |

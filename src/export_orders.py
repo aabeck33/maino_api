@@ -213,9 +213,9 @@ def process_orders_and_invoices(session: requests.Session, token: str, status: s
                 # represents a failure to communicate, we raise to allow retry/recovery instead of silently outputting invalid data.
                 raise
 
-            invoice_id = invoice_info["id"]
-            invoice_status = invoice_info["status"]
-            url_nfe = invoice_info["danfe_url"]
+            invoice_id = invoice_info.get("id", "N/A")
+            invoice_status = invoice_info.get("status", "Não emitida")
+            url_nfe = invoice_info.get("danfe_url", "N/A")
             order_total = compute_order_total_from_parcels(order)
 
             effective_cep = order_cep or "N/A"
@@ -252,34 +252,33 @@ def process_orders_and_invoices(session: requests.Session, token: str, status: s
 
 def save_to_excel(rows: List[Dict[str, Any]], filepath: Path) -> None:
     """Saves the extracted sales order item details to an Excel file."""
-    headers = [
+    preferred_headers = [
         "Pedido ID",
         "Número do Pedido",
-        "Status do Pedido",
-        "Data do Pedido",
         "Código do Produto",
         "Quantidade",
         "ID da Nota Fiscal",
         "Status da Nota Fiscal",
-        "URL NFe",
-        "CEP",
-        "UF",
-        "Cidade",
-        "Valor Total",
-        "Representante",
     ]
-    
+
+    discovered_headers: List[str] = []
+    for row in rows:
+        for key in row.keys():
+            if key not in discovered_headers:
+                discovered_headers.append(key)
+
+    headers = [header for header in preferred_headers if header in discovered_headers]
+    headers.extend([header for header in discovered_headers if header not in headers])
+
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Itens Pedidos Confirmados"
-    
-    # Append header row
+
     sheet.append(headers)
-    
-    # Append data rows
+
     for row in rows:
         sheet.append([row.get(col) for col in headers])
-        
+
     filepath.parent.mkdir(parents=True, exist_ok=True)
     workbook.save(filepath)
     logger.info(f"Planilha Excel gerada com sucesso em: {filepath}")

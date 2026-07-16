@@ -9,19 +9,71 @@
 
 import os
 from pathlib import Path
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, Optional
 import unicodedata
 import pandas as pd
 
 from utils.geo import BRAZIL_STATE_CENTROIDS, map_cep_to_uf
+from utils.logger import setup_logger
+
+logger = setup_logger("maino_analytics")
 
 class SalesAnalytics:
     """
     Classe responsável pelo carregamento, filtragem e análise de dados de vendas.
     """
-    def __init__(self, excel_path: Path):
+    def __init__(self, excel_path: Path, products_excel_path: Optional[Path] = None):
         self.excel_path = excel_path
+        self.products_excel_path = products_excel_path
+        self.products_df = self.load_products_catalog(products_excel_path)
         self.df = self._load_data()
+
+    @classmethod
+    def load_products_catalog(cls, products_excel_path: Optional[Path] = None) -> pd.DataFrame:
+        """Loads the product catalog from the Excel workbook in the work folder."""
+        default_path = Path(__file__).resolve().parent.parent / "work" / "produtos.xlsx"
+        path = Path(products_excel_path) if products_excel_path else default_path
+
+        if not path.exists():
+            logger.warning("Catálogo de produtos não encontrado em %s. Indicadores financeiros serão limitados.", path)
+            return pd.DataFrame(columns=["Código", "PU de entrada", "PU de saída"])
+
+        try:
+            df = pd.read_excel(path, engine="openpyxl")
+        except Exception as exc:  # pragma: no cover - defensive logging
+            logger.error("Erro ao carregar catálogo de produtos em %s: %s", path, exc)
+            return pd.DataFrame(columns=["Código", "PU de entrada", "PU de saída"])
+
+        if df.empty:
+            return pd.DataFrame(columns=["Código", "PU de entrada", "PU de saída"])
+
+        df = df.copy()
+        df["Código"] = df["Código"].astype(str).str.strip().str.upper()
+        for col in ["PU de entrada", "PU de saída"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+            else:
+                df[col] = 0.0
+        return df
+
+    @staticmethod
+    def _coerce_customer_key(df: pd.DataFrame) -> pd.Series:
+        """Builds a usable customer identifier from the available columns."""
+        if df.empty:
+            return pd.Series(dtype="object")
+
+        if "Cliente" in df.columns:
+            values = df["Cliente"]
+        elif "Nome do Cliente" in df.columns:
+            values = df["Nome do Cliente"]
+        elif "CEP" in df.columns:
+            values = df["CEP"]
+        elif "Pedido ID" in df.columns:
+            values = df["Pedido ID"]
+        else:
+            values = pd.Series(["N/A"] * len(df), index=df.index)
+
+        return values.astype(str).str.strip().replace({"": "N/A"}).fillna("N/A")
 
     def _load_data(self) -> pd.DataFrame:
         """Loads and cleans the sales orders data from the Excel file."""
@@ -58,7 +110,16 @@ class SalesAnalytics:
         text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
         return text
 
-    def get_filtered_data(self, status_filter: str = "Todos", search_product: str = "") -> pd.DataFrame:
+    def get_filtered_data(
+        self,
+        status_filter: str = "Todos",
+        search_product: str = "",
+        date_start: Optional[Any] = None,
+        date_end: Optional[Any] = None,
+        representative: Optional[str] = None,
+        customer: Optional[str] = None,
+        region: Optional[str] = None,
+    ) -> pd.DataFrame:
         """Applies global filters to the raw DataFrame."""
         filtered_df = self.df.copy()
 
@@ -76,7 +137,29 @@ class SalesAnalytics:
 
         # Search by Product Code
         if search_product:
-            filtered_df = filtered_df[filtered_df["Código do Produto"].str.contains(search_product, case=False, na=False)]
+            filtered_df = filtered_df[filtered_df["Código do Produto"].astype(str).str.contains(search_product, case=False, na=False)]
+
+        # Date filters
+        if date_start is not None or date_end is not None:
+            date_col = self._find_date_column(filtered_df)
+            if date_col and date_col in filtered_df.columns:
+                filtered_df[date_col] = pd.to_datetime(filtered_df[date_col], errors="coerce")
+                mask = pd.Series(True, index=filtered_df.index)
+                if date_start is not None:
+                    mask &= filtered_df[date_col] >= pd.Timestamp(date_start)
+                if date_end is not None:
+                    mask &= filtered_df[date_col] <= pd.Timestamp(date_end)
+                filtered_df = filtered_df.loc[mask]
+
+        if representative not in {None, "", "Todos"} and "Representante" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["Representante"].astype(str).str.strip() == representative]
+
+        if customer not in {None, "", "Todos"}:
+            customer_key = self._coerce_customer_key(filtered_df)
+            filtered_df = filtered_df[customer_key.astype(str).str.contains(customer, case=False, na=False)]
+
+        if region not in {None, "", "Todos"} and "UF" in filtered_df.columns:
+            filtered_df = filtered_df[filtered_df["UF"].astype(str).str.strip().str.upper() == region.upper()]
 
         return filtered_df
 
@@ -116,6 +199,224 @@ class SalesAnalytics:
             "orders_without_nf": orders_without_nf,
             "nf_emission_rate": nf_emission_rate
         }
+
+    def build_profitability_dataset(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Builds a profitability dataset by joining sales rows to the product catalog."""
+        if df.empty:
+            return pd.DataFrame(columns=[
+                "Código do Produto",
+                "Descrição do Produto",
+                "Quantidade",
+                "Faturamento",
+                "Custo Total",
+                "Lucro Bruto",
+                "Margem Bruta (%)",
+                "Representante",
+                "Cliente",
+                "UF",
+            ])
+
+        sales_df = df.copy()
+        sales_df["Quantidade"] = pd.to_numeric(sales_df["Quantidade"], errors="coerce").fillna(0.0)
+        sales_df["Código do Produto"] = sales_df["Código do Produto"].astype(str).str.strip().str.upper()
+        sales_df["Cliente"] = self._coerce_customer_key(sales_df)
+        sales_df["Representante"] = (
+            sales_df.get("Representante", pd.Series(["N/A"] * len(sales_df), index=sales_df.index))
+            .astype(str)
+            .str.strip()
+            .replace({"": "N/A"})
+            .fillna("N/A")
+        )
+        sales_df["UF"] = (
+            sales_df.get("UF", pd.Series(["N/A"] * len(sales_df), index=sales_df.index))
+            .astype(str)
+            .str.strip()
+            .str.upper()
+            .replace({"": "N/A"})
+            .fillna("N/A")
+        )
+
+        products_df = self.products_df.copy() if not self.products_df.empty else pd.DataFrame(columns=["Código", "Descrição", "PU de entrada", "PU de saída"])
+        if not products_df.empty:
+            products_df["Código"] = products_df["Código"].astype(str).str.strip().str.upper()
+            products_df["Descrição"] = products_df.get("Descrição", pd.Series(["N/A"] * len(products_df), index=products_df.index)).astype(str)
+            for col in ["PU de entrada", "PU de saída"]:
+                if col in products_df.columns:
+                    products_df[col] = pd.to_numeric(products_df[col], errors="coerce").fillna(0.0)
+        else:
+            products_df = pd.DataFrame({"Código": [], "Descrição": [], "PU de entrada": [], "PU de saída": []})
+
+        profitability = sales_df.merge(
+            products_df[["Código", "Descrição", "PU de entrada", "PU de saída"]].rename(columns={"Código": "Código do Produto", "Descrição": "Descrição do Produto"}),
+            on="Código do Produto",
+            how="left",
+        )
+
+        profitability["Preço de Entrada"] = pd.to_numeric(profitability.get("PU de entrada", 0.0), errors="coerce").fillna(0.0)
+        profitability["Preço de Venda"] = pd.to_numeric(profitability.get("PU de saída", 0.0), errors="coerce").fillna(0.0)
+        profitability["Faturamento"] = profitability["Preço de Venda"] * profitability["Quantidade"]
+        profitability["Custo Total"] = profitability["Preço de Entrada"] * profitability["Quantidade"]
+        profitability["Lucro Bruto"] = profitability["Faturamento"] - profitability["Custo Total"]
+        profitability["Margem Bruta (%)"] = pd.Series(0.0, index=profitability.index)
+        non_zero = profitability["Faturamento"] > 0
+        profitability.loc[non_zero, "Margem Bruta (%)"] = (profitability.loc[non_zero, "Lucro Bruto"] / profitability.loc[non_zero, "Faturamento"] * 100)
+        profitability["Descrição do Produto"] = profitability["Descrição do Produto"].fillna("N/A")
+        profitability["Representante"] = profitability["Representante"].astype(str).str.strip().replace({"": "N/A"}).fillna("N/A")
+        profitability["UF"] = profitability["UF"].astype(str).str.strip().str.upper().replace({"": "N/A"}).fillna("N/A")
+        return profitability
+
+    def calculate_financial_kpis(self, profitability_df: pd.DataFrame) -> Dict[str, Any]:
+        """Calculates the main financial KPIs from a profitability dataset."""
+        if profitability_df.empty:
+            return {
+                "revenue_total": 0.0,
+                "gross_profit_total": 0.0,
+                "gross_margin_avg": 0.0,
+                "top_product": "N/A",
+                "top_representative": "N/A",
+                "top_customer": "N/A",
+            }
+
+        gross_profit_total = float(profitability_df["Lucro Bruto"].sum())
+        revenue_total = float(profitability_df["Faturamento"].sum())
+        gross_margin_avg = (gross_profit_total / revenue_total * 100) if revenue_total > 0 else 0.0
+
+        product_summary = (
+            profitability_df.groupby("Código do Produto", dropna=False, as_index=False)
+            .agg(Faturamento=("Faturamento", "sum"), Lucro_Bruto=("Lucro Bruto", "sum"))
+            .sort_values("Lucro_Bruto", ascending=False)
+        )
+        top_product = product_summary.iloc[0]["Código do Produto"] if not product_summary.empty else "N/A"
+
+        rep_summary = (
+            profitability_df.groupby("Representante", dropna=False, as_index=False)
+            .agg(Lucro_Bruto=("Lucro Bruto", "sum"))
+            .sort_values("Lucro_Bruto", ascending=False)
+        )
+        top_representative = rep_summary.iloc[0]["Representante"] if not rep_summary.empty else "N/A"
+
+        customer_summary = (
+            profitability_df.groupby("Cliente", dropna=False, as_index=False)
+            .agg(Lucro_Bruto=("Lucro Bruto", "sum"))
+            .sort_values("Lucro_Bruto", ascending=False)
+        )
+        top_customer = customer_summary.iloc[0]["Cliente"] if not customer_summary.empty else "N/A"
+
+        return {
+            "revenue_total": revenue_total,
+            "gross_profit_total": gross_profit_total,
+            "gross_margin_avg": gross_margin_avg,
+            "top_product": top_product,
+            "top_representative": top_representative,
+            "top_customer": top_customer,
+        }
+
+    def get_profitability_by_product(self, profitability_df: pd.DataFrame) -> pd.DataFrame:
+        """Aggregates profitability by product."""
+        if profitability_df.empty:
+            return pd.DataFrame(columns=["Código do Produto", "Descrição do Produto", "Faturamento", "Lucro Bruto", "Margem Bruta (%)", "Quantidade", "Participação no Lucro (%)", "Participação no Faturamento (%)"])
+
+        summary = (
+            profitability_df.groupby(["Código do Produto", "Descrição do Produto"], dropna=False, as_index=False)
+            .agg(
+                Quantidade=("Quantidade", "sum"),
+                Faturamento=("Faturamento", "sum"),
+                Lucro_Bruto=("Lucro Bruto", "sum"),
+                Custo_Total=("Custo Total", "sum"),
+            )
+        )
+        summary = summary.rename(columns={"Lucro_Bruto": "Lucro Bruto"})
+        summary["Margem Bruta (%)"] = pd.Series(0.0, index=summary.index)
+        non_zero = summary["Faturamento"] > 0
+        summary.loc[non_zero, "Margem Bruta (%)"] = (summary.loc[non_zero, "Lucro Bruto"] / summary.loc[non_zero, "Faturamento"] * 100)
+        total_profit = summary["Lucro Bruto"].sum()
+        total_revenue = summary["Faturamento"].sum()
+        summary["Participação no Lucro (%)"] = (summary["Lucro Bruto"] / total_profit * 100) if total_profit > 0 else 0.0
+        summary["Participação no Faturamento (%)"] = (summary["Faturamento"] / total_revenue * 100) if total_revenue > 0 else 0.0
+        return summary.sort_values("Lucro Bruto", ascending=False).reset_index(drop=True)
+
+    def get_profitability_by_representative(self, profitability_df: pd.DataFrame) -> pd.DataFrame:
+        """Aggregates profitability by representative."""
+        if profitability_df.empty:
+            return pd.DataFrame(columns=["Representante", "Faturamento", "Lucro Bruto", "Margem Bruta (%)"])
+
+        summary = (
+            profitability_df.groupby("Representante", dropna=False, as_index=False)
+            .agg(Faturamento=("Faturamento", "sum"), Lucro_Bruto=("Lucro Bruto", "sum"))
+        )
+        summary = summary.rename(columns={"Lucro_Bruto": "Lucro Bruto"})
+        summary["Margem Bruta (%)"] = pd.Series(0.0, index=summary.index)
+        non_zero = summary["Faturamento"] > 0
+        summary.loc[non_zero, "Margem Bruta (%)"] = (summary.loc[non_zero, "Lucro Bruto"] / summary.loc[non_zero, "Faturamento"] * 100)
+        return summary.sort_values("Lucro Bruto", ascending=False).reset_index(drop=True)
+
+    def get_profitability_by_customer(self, profitability_df: pd.DataFrame) -> pd.DataFrame:
+        """Aggregates profitability by customer."""
+        if profitability_df.empty:
+            return pd.DataFrame(columns=["Cliente", "Faturamento", "Lucro Bruto", "Margem Bruta (%)"])
+
+        summary = (
+            profitability_df.groupby("Cliente", dropna=False, as_index=False)
+            .agg(Faturamento=("Faturamento", "sum"), Lucro_Bruto=("Lucro Bruto", "sum"))
+        )
+        summary = summary.rename(columns={"Lucro_Bruto": "Lucro Bruto"})
+        summary["Margem Bruta (%)"] = pd.Series(0.0, index=summary.index)
+        non_zero = summary["Faturamento"] > 0
+        summary.loc[non_zero, "Margem Bruta (%)"] = (summary.loc[non_zero, "Lucro Bruto"] / summary.loc[non_zero, "Faturamento"] * 100)
+        return summary.sort_values("Lucro Bruto", ascending=False).reset_index(drop=True)
+
+    def get_monthly_profitability(self, profitability_df: pd.DataFrame) -> pd.DataFrame:
+        """Builds monthly profitability evolution using the available date column."""
+        if profitability_df.empty:
+            return pd.DataFrame(columns=["Mês", "Faturamento", "Lucro Bruto", "Margem Bruta (%)"])
+
+        monthly_df = profitability_df.copy()
+        date_col = self._find_date_column(monthly_df)
+        if date_col and date_col in monthly_df.columns:
+            monthly_df[date_col] = pd.to_datetime(monthly_df[date_col], errors="coerce")
+            monthly_df = monthly_df[monthly_df[date_col].notna()]
+            if monthly_df.empty:
+                monthly_df["Mês"] = pd.Timestamp.today().to_period("M").to_timestamp()
+            else:
+                monthly_df["Mês"] = monthly_df[date_col].dt.to_period("M").dt.to_timestamp()
+        else:
+            monthly_df["Mês"] = pd.Timestamp.today().to_period("M").to_timestamp()
+
+        monthly = (
+            monthly_df.groupby("Mês", dropna=False, as_index=False)
+            .agg(Faturamento=("Faturamento", "sum"), Lucro_Bruto=("Lucro Bruto", "sum"))
+        )
+        monthly = monthly.rename(columns={"Lucro_Bruto": "Lucro Bruto"})
+        monthly["Margem Bruta (%)"] = pd.Series(0.0, index=monthly.index)
+        non_zero = monthly["Faturamento"] > 0
+        monthly.loc[non_zero, "Margem Bruta (%)"] = (monthly.loc[non_zero, "Lucro Bruto"] / monthly.loc[non_zero, "Faturamento"] * 100)
+        return monthly.sort_values("Mês").reset_index(drop=True)
+
+    @staticmethod
+    def get_abc_analysis(df: pd.DataFrame, value_col: str) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+        """Performs an ABC classification on a profitability table using a numeric value column."""
+        if df.empty:
+            return pd.DataFrame(), {"A": 0, "B": 0, "C": 0}
+
+        abc_df = df.copy()
+        abc_df = abc_df.sort_values(by=value_col, ascending=False).reset_index(drop=True)
+        total_value = abc_df[value_col].sum()
+        abc_df["Participação (%)"] = (abc_df[value_col] / total_value * 100) if total_value > 0 else 0.0
+        abc_df["Acumulado (%)"] = abc_df["Participação (%)"].cumsum()
+
+        classes = []
+        for value in abc_df["Acumulado (%)"]:
+            if value <= 80.0:
+                classes.append("A")
+            elif value <= 95.0:
+                classes.append("B")
+            else:
+                classes.append("C")
+        abc_df["Classe ABC"] = classes
+        class_counts = abc_df["Classe ABC"].value_counts().to_dict()
+        for key in ["A", "B", "C"]:
+            class_counts.setdefault(key, 0)
+        return abc_df, class_counts
 
     @staticmethod
     def get_abc_pareto_analysis(df: pd.DataFrame) -> Tuple[pd.DataFrame, Dict[str, Any]]:
@@ -300,14 +601,29 @@ class SalesAnalytics:
 
         df = SalesAnalytics._ensure_representante_column(df)
         df = df.copy()
-        df["Valor Total"] = pd.to_numeric(df["Valor Total"], errors="coerce").fillna(0.0)
+        if "Valor Total" in df.columns:
+            df["Valor Total"] = pd.to_numeric(df["Valor Total"], errors="coerce").fillna(0.0)
+        else:
+            df["Valor Total"] = 0.0
         df["Cliente_Chave"] = SalesAnalytics._client_identifier(df)
 
-        summary = df.groupby("Representante", dropna=False, as_index=False).agg(
-            Receita_Total=("Valor Total", "sum"),
-            Pedidos=("Pedido ID", lambda values: values.nunique()),
-            Clientes_Unicos=("Cliente_Chave", lambda values: values.nunique()),
-            Produtos_Distintos=("Código do Produto", lambda values: values.nunique())
+        order_levels = (
+            df.groupby(["Pedido ID", "Representante"], dropna=False, as_index=False)
+            .agg(
+                Valor_Total=("Valor Total", "first"),
+                Cliente_Chave=("Cliente_Chave", "first"),
+                Código_do_Produto=("Código do Produto", lambda values: values.nunique()),
+            )
+        )
+
+        summary = (
+            order_levels.groupby("Representante", dropna=False, as_index=False)
+            .agg(
+                Receita_Total=("Valor_Total", "sum"),
+                Pedidos=("Pedido ID", "count"),
+                Clientes_Unicos=("Cliente_Chave", lambda values: values.nunique()),
+                Produtos_Distintos=("Código_do_Produto", "sum"),
+            )
         )
         summary["Ticket_Medio"] = summary.apply(
             lambda row: row["Receita_Total"] / row["Pedidos"] if row["Pedidos"] > 0 else 0.0,

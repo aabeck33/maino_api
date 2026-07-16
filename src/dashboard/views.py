@@ -9,6 +9,10 @@ from typing import Dict, Any
 from dashboard.components import metric_card, custom_table, chart_container, chart_container_end
 from analytics.processing import SalesAnalytics
 
+
+def format_currency(value: float) -> str:
+    return f"R$ {value:,.2f}"
+
 def get_plot_layout(is_dark: bool) -> dict:
     """Returns the base layout configuration for Plotly charts."""
     text_color = "#a1a1aa" if is_dark else "#71717a"
@@ -113,6 +117,162 @@ def render_overview(df: pd.DataFrame, kpis: Dict[str, Any]) -> None:
                 </div>
             </div>
             """, unsafe_allow_html=True)
+
+
+def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, is_dark: bool) -> None:
+    """Renders the financial profitability dashboard section."""
+    st.markdown("### Indicadores Financeiros e de Rentabilidade")
+
+    analytics = SalesAnalytics.__new__(SalesAnalytics)
+    analytics.products_df = SalesAnalytics.load_products_catalog(None)
+    analytics.df = raw_df
+
+    if profitability_df.empty:
+        profitability_df = analytics.build_profitability_dataset(raw_df)
+
+    kpis = analytics.calculate_financial_kpis(profitability_df)
+    product_summary = analytics.get_profitability_by_product(profitability_df)
+    rep_summary = analytics.get_profitability_by_representative(profitability_df)
+    customer_summary = analytics.get_profitability_by_customer(profitability_df)
+    monthly_df = analytics.get_monthly_profitability(profitability_df)
+    abc_revenue, _ = analytics.get_abc_analysis(product_summary, "Faturamento")
+    abc_profit, _ = analytics.get_abc_analysis(product_summary, "Lucro Bruto")
+
+    c1, c2, c3, c4, c5, c6 = st.columns(6)
+    with c1:
+        metric_card("Faturamento Total", format_currency(kpis["revenue_total"]), delta="Receita", delta_type="up")
+    with c2:
+        metric_card("Lucro Bruto Total", format_currency(kpis["gross_profit_total"]), delta="Resultado", delta_type="up")
+    with c3:
+        metric_card("Margem Bruta Média", f"{kpis['gross_margin_avg']:.2f}%", delta="Rentabilidade", delta_type="up")
+    with c4:
+        metric_card("Produto Mais Lucrativo", kpis["top_product"], delta="Top SKU")
+    with c5:
+        metric_card("Representante Mais Lucrativo", kpis["top_representative"], delta="Top Rep")
+    with c6:
+        metric_card("Cliente Mais Lucrativo", kpis["top_customer"], delta="Top Cliente")
+
+    st.markdown("<div style='margin: 1rem 0;'></div>", unsafe_allow_html=True)
+
+    chart_container("Evolução Mensal de Faturamento, Lucro e Margem", "Comparativo financeiro pelo período analisado")
+    if not monthly_df.empty:
+        fig_monthly = make_subplots(specs=[[{"secondary_y": True}]])
+        fig_monthly.add_trace(ob.Bar(x=monthly_df["Mês"], y=monthly_df["Faturamento"], name="Faturamento", marker_color="#2563eb", opacity=0.8), secondary_y=False)
+        fig_monthly.add_trace(ob.Scatter(x=monthly_df["Mês"], y=monthly_df["Lucro Bruto"], name="Lucro Bruto", line=dict(color="#22c55e", width=3)), secondary_y=False)
+        fig_monthly.add_trace(ob.Scatter(x=monthly_df["Mês"], y=monthly_df["Margem Bruta (%)"], name="Margem Bruta (%)", line=dict(color="#f59e0b", width=3)), secondary_y=True)
+        fig_monthly.update_layout(get_plot_layout(is_dark))
+        fig_monthly.update_yaxes(title_text="R$", secondary_y=False)
+        fig_monthly.update_yaxes(title_text="Margem (%)", secondary_y=True)
+        st.plotly_chart(fig_monthly, use_container_width=True, config={"displayModeBar": False})
+    else:
+        st.info("Não há dados suficientes para montar a evolução mensal.")
+    chart_container_end()
+
+    chart_container("Comparativo Faturamento x Lucro", "Contribuição financeira dos principais produtos")
+    if not product_summary.empty:
+        compare_df = product_summary.head(10).copy()
+        compare_df = compare_df.sort_values(["Faturamento", "Lucro Bruto"], ascending=True)
+        fig_compare = make_subplots(specs=[[{"secondary_y": True}]])
+        fig_compare.add_trace(ob.Bar(x=compare_df["Código do Produto"], y=compare_df["Faturamento"], name="Faturamento", marker_color="#2563eb", opacity=0.7), secondary_y=False)
+        fig_compare.add_trace(ob.Scatter(x=compare_df["Código do Produto"], y=compare_df["Lucro Bruto"], name="Lucro Bruto", line=dict(color="#22c55e", width=3)), secondary_y=True)
+        fig_compare.update_layout(get_plot_layout(is_dark))
+        fig_compare.update_yaxes(title_text="R$", secondary_y=False)
+        fig_compare.update_yaxes(title_text="Lucro (R$)", secondary_y=True)
+        st.plotly_chart(fig_compare, use_container_width=True, config={"displayModeBar": False})
+    chart_container_end()
+
+    st.markdown("#### Rankings Financeiros")
+    col1, col2 = st.columns(2)
+    with col1:
+        chart_container("Top 10 Produtos por Lucro", "Produtos que mais geram resultado financeiro")
+        top_profit = product_summary.head(10).copy()
+        if not top_profit.empty:
+            top_profit = top_profit.sort_values("Lucro Bruto", ascending=True)
+            fig_profit = px.bar(
+                top_profit,
+                x="Lucro Bruto",
+                y="Código do Produto",
+                orientation="h",
+                labels={"Lucro Bruto": "Lucro Bruto (R$)", "Código do Produto": "Produto"},
+                color="Lucro Bruto",
+                color_continuous_scale="Greens",
+                text_auto=",.0f"
+            )
+            fig_profit.update_layout(get_plot_layout(is_dark))
+            st.plotly_chart(fig_profit, use_container_width=True, config={"displayModeBar": False})
+        chart_container_end()
+
+    with col2:
+        chart_container("Top 10 Produtos por Receita", "Produtos com maior faturamento")
+        top_revenue = product_summary.head(10).copy()
+        if not top_revenue.empty:
+            top_revenue = top_revenue.sort_values("Faturamento", ascending=True)
+            fig_revenue = px.bar(
+                top_revenue,
+                x="Faturamento",
+                y="Código do Produto",
+                orientation="h",
+                labels={"Faturamento": "Faturamento (R$)", "Código do Produto": "Produto"},
+                color="Faturamento",
+                color_continuous_scale="Blues",
+                text_auto=",.0f"
+            )
+            fig_revenue.update_layout(get_plot_layout(is_dark))
+            st.plotly_chart(fig_revenue, use_container_width=True, config={"displayModeBar": False})
+        chart_container_end()
+
+    st.markdown("#### Curvas ABC Financeiras")
+    col_abc_revenue, col_abc_profit = st.columns(2)
+    with col_abc_revenue:
+        chart_container("Curva ABC por Receita", "Classificação dos produtos pelo impacto no faturamento")
+        if not abc_revenue.empty:
+            fig_abc_rev = px.bar(
+                abc_revenue.head(15),
+                x="Código do Produto",
+                y="Faturamento",
+                color="Classe ABC",
+                labels={"Código do Produto": "Produto", "Faturamento": "Receita (R$)"},
+                color_discrete_map={"A": "#2563eb", "B": "#f59e0b", "C": "#16a34a"}
+            )
+            fig_abc_rev.update_layout(get_plot_layout(is_dark))
+            st.plotly_chart(fig_abc_rev, use_container_width=True, config={"displayModeBar": False})
+        chart_container_end()
+
+    with col_abc_profit:
+        chart_container("Curva ABC por Lucro", "Classificação dos produtos pela contribuição para o lucro")
+        if not abc_profit.empty:
+            fig_abc_profit = px.bar(
+                abc_profit.head(15),
+                x="Código do Produto",
+                y="Lucro Bruto",
+                color="Classe ABC",
+                labels={"Código do Produto": "Produto", "Lucro Bruto": "Lucro Bruto (R$)"},
+                color_discrete_map={"A": "#2563eb", "B": "#f59e0b", "C": "#16a34a"}
+            )
+            fig_abc_profit.update_layout(get_plot_layout(is_dark))
+            st.plotly_chart(fig_abc_profit, use_container_width=True, config={"displayModeBar": False})
+        chart_container_end()
+
+    st.markdown("#### Tabelas de Análise")
+    c_table1, c_table2, c_table3 = st.columns(3)
+    with c_table1:
+        st.markdown("**Top 10 Produtos por Lucro**")
+        custom_table(
+            product_summary.head(10)[["Código do Produto", "Faturamento", "Lucro Bruto", "Margem Bruta (%)", "Participação no Lucro (%)"]].rename(columns={"Lucro Bruto": "Lucro Bruto", "Margem Bruta (%)": "Margem Bruta (%)"}),
+            columns_mapping={"Código do Produto": "Produto", "Faturamento": "Faturamento", "Lucro Bruto": "Lucro Bruto", "Margem Bruta (%)": "Margem Bruta (%)", "Participação no Lucro (%)": "% Lucro"}
+        )
+    with c_table2:
+        st.markdown("**Representantes por Lucro**")
+        custom_table(
+            rep_summary[["Representante", "Faturamento", "Lucro Bruto", "Margem Bruta (%)"]].rename(columns={"Lucro Bruto": "Lucro Bruto"}),
+            columns_mapping={"Representante": "Representante", "Faturamento": "Faturamento", "Lucro Bruto": "Lucro Bruto", "Margem Bruta (%)": "Margem Bruta (%)"}
+        )
+    with c_table3:
+        st.markdown("**Clientes Mais Lucrativos**")
+        custom_table(
+            customer_summary[["Cliente", "Faturamento", "Lucro Bruto", "Margem Bruta (%)"]].rename(columns={"Lucro Bruto": "Lucro Bruto"}),
+            columns_mapping={"Cliente": "Cliente", "Faturamento": "Faturamento", "Lucro Bruto": "Lucro Bruto", "Margem Bruta (%)": "Margem Bruta (%)"}
+        )
 
 
 def render_representatives(df: pd.DataFrame, is_dark: bool) -> None:

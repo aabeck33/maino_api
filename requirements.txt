@@ -4,7 +4,10 @@ openpyxl==3.1.5
 python-dotenv==1.2.2
 
 # Dashboard Executivo
-streamlit
-plotly
-pandas
-numpy
+streamlit>=1.37.0
+plotly>=5.24.0
+pandas>=2.2.0
+numpy>=1.26.0
+
+# Testes
+pytest>=8.0.0
