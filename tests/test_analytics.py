@@ -258,6 +258,34 @@ class TestFinancialAnalytics(unittest.TestCase):
 
         self.assertEqual(profitability["Representante"].tolist(), ["Rep Padrão", "Rep Padrão", "Joana"])
 
+    def test_build_profitability_dataset_uses_sem_representante_when_env_is_empty(self):
+        analytics = SalesAnalytics.__new__(SalesAnalytics)
+        analytics.products_df = pd.DataFrame({
+            "Código": ["A01"],
+            "Descrição": ["Produto A"],
+            "PU de entrada": [10.0],
+            "PU de saída": [20.0],
+            "Origem": ["Nacional"],
+        })
+        analytics.df = pd.DataFrame({
+            "Pedido ID": ["p1", "p2"],
+            "Número do Pedido": ["001", "002"],
+            "Código do Produto": ["A01", "A01"],
+            "Quantidade": [1.0, 1.0],
+            "ID da Nota Fiscal": ["nf1", "nf2"],
+            "Status da Nota Fiscal": ["ACEITA", "ACEITA"],
+            "CEP": ["13044-480", "13044-480"],
+            "UF": ["SP", "SP"],
+            "Cidade": ["Campinas", "Campinas"],
+            "Representante": ["", "N/A"],
+        })
+
+        os.environ["NOME_PADRAO_REPRESENTANTE"] = ""
+
+        profitability = analytics.build_profitability_dataset(analytics.df)
+
+        self.assertEqual(profitability["Representante"].tolist(), ["Sem Representante", "Sem Representante"])
+
 
 class TestRepresentativeAnalytics(unittest.TestCase):
     def setUp(self):

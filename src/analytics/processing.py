@@ -286,8 +286,8 @@ class SalesAnalytics:
         profitability.loc[non_zero, "Margem Bruta (%)"] = (profitability.loc[non_zero, "Lucro Bruto"] / profitability.loc[non_zero, "Faturamento"] * 100)
         profitability["Descrição do Produto"] = profitability["Descrição do Produto"].fillna("N/A")
         default_rep = os.getenv("NOME_PADRAO_REPRESENTANTE", "").strip()
-        if not default_rep:
-            default_rep = "N/A"
+        if not default_rep or default_rep.upper() in {"N/A", "NA", "NONE", "NULL", "<NA>"}:
+            default_rep = "Sem Representante"
 
         profitability["Representante"] = profitability["Representante"].astype(str).str.strip()
         missing_rep_mask = profitability["Representante"].isin(["", "N/A", "NA", "None", "none", "nan", "NaN", "<NA>"])

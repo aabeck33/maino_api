@@ -194,6 +194,14 @@ def process_orders_and_invoices(session: requests.Session, token: str, status: s
                 find_value_by_keys(order.get("cliente") or {}, ["municipio", "municipio_ibge"])
                 or ""
             ).strip() or "N/A"
+            order_doc = str(
+                find_value_by_keys(order.get("cliente") or {}, ["documento", "cpf", "cnpj"])
+                or ""
+            ).strip() or "N/A"
+            order_cli = str(
+                find_value_by_keys(order.get("cliente") or {}, ["nome_fantasia", "razao_social"])
+                or ""
+            ).strip() or "N/A"
             order_representative = find_value_by_keys(order.get("representante") or {}, ["nome", "name"]) or "N/A"
             order_date = order.get("data") or "N/A"
             items = order.get("itens") or []
@@ -232,6 +240,8 @@ def process_orders_and_invoices(session: requests.Session, token: str, status: s
                     "ID da Nota Fiscal": invoice_id,
                     "Status da Nota Fiscal": invoice_status,
                     "URL NFe": url_nfe,
+                    "CPF/CNPJ do Cliente": order_doc,
+                    "Nome do Cliente": order_cli,
                     "CEP": effective_cep,
                     "UF": effective_uf,
                     "Cidade": order_city,

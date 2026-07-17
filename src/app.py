@@ -4,6 +4,8 @@
     pedidos e informações fiscais a partir de uma planilha Excel. Ele oferece filtros interativos,
     exportação de dados e uma interface de usuário responsiva com suporte a temas claro e escuro.
 
+    Documentação: https://changelog.maino.com.br/api-reference-maino/10.-pedidos-de-venda
+
 Alvaro Adriano Beck - 07/2026
 """
 
