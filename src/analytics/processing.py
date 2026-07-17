@@ -12,11 +12,13 @@ from pathlib import Path
 from typing import Dict, Any, Tuple, Optional
 import unicodedata
 import pandas as pd
+from dotenv import load_dotenv
 
 from utils.geo import BRAZIL_STATE_CENTROIDS, map_cep_to_uf
 from utils.logger import setup_logger
 
 logger = setup_logger("maino_analytics")
+load_dotenv()
 
 class SalesAnalytics:
     """
@@ -200,6 +202,20 @@ class SalesAnalytics:
             "nf_emission_rate": nf_emission_rate
         }
 
+    @staticmethod
+    def _get_variable_cost_percentage(origin: Optional[str]) -> float:
+        """Returns the variable cost percentage based on the product origin."""
+        if origin is None:
+            return float(os.getenv("CUSTO_VARIAVEL_NACIONAL", "0.2615"))
+
+        normalized_origin = str(origin).strip().lower()
+        if "estrangeira" in normalized_origin or "import" in normalized_origin:
+            if "mercado interno" in normalized_origin or "mercado nacional" in normalized_origin or "adquirida" in normalized_origin:
+                return float(os.getenv("CUSTO_VARIAVEL_NACIONAL", "0.2615"))
+            return float(os.getenv("CUSTO_VARIAVEL_IMPORTADO", "0.2015"))
+
+        return float(os.getenv("CUSTO_VARIAVEL_NACIONAL", "0.2615"))
+
     def build_profitability_dataset(self, df: pd.DataFrame) -> pd.DataFrame:
         """Builds a profitability dataset by joining sales rows to the product catalog."""
         if df.empty:
@@ -236,32 +252,47 @@ class SalesAnalytics:
             .fillna("N/A")
         )
 
-        products_df = self.products_df.copy() if not self.products_df.empty else pd.DataFrame(columns=["Código", "Descrição", "PU de entrada", "PU de saída"])
+        products_df = self.products_df.copy() if not self.products_df.empty else pd.DataFrame(columns=["Código", "Descrição", "PU de entrada", "PU de saída", "Origem"])
         if not products_df.empty:
             products_df["Código"] = products_df["Código"].astype(str).str.strip().str.upper()
             products_df["Descrição"] = products_df.get("Descrição", pd.Series(["N/A"] * len(products_df), index=products_df.index)).astype(str)
             for col in ["PU de entrada", "PU de saída"]:
                 if col in products_df.columns:
                     products_df[col] = pd.to_numeric(products_df[col], errors="coerce").fillna(0.0)
+            if "Origem" in products_df.columns:
+                products_df["Origem"] = products_df["Origem"].astype(str).fillna("")
+            else:
+                products_df["Origem"] = ""
         else:
-            products_df = pd.DataFrame({"Código": [], "Descrição": [], "PU de entrada": [], "PU de saída": []})
+            products_df = pd.DataFrame({"Código": [], "Descrição": [], "PU de entrada": [], "PU de saída": [], "Origem": []})
 
         profitability = sales_df.merge(
-            products_df[["Código", "Descrição", "PU de entrada", "PU de saída"]].rename(columns={"Código": "Código do Produto", "Descrição": "Descrição do Produto"}),
+            products_df[["Código", "Descrição", "PU de entrada", "PU de saída", "Origem"]].rename(columns={"Código": "Código do Produto", "Descrição": "Descrição do Produto"}),
             on="Código do Produto",
             how="left",
         )
 
         profitability["Preço de Entrada"] = pd.to_numeric(profitability.get("PU de entrada", 0.0), errors="coerce").fillna(0.0)
         profitability["Preço de Venda"] = pd.to_numeric(profitability.get("PU de saída", 0.0), errors="coerce").fillna(0.0)
+        profitability["Origem"] = profitability.get("Origem", "").astype(str).fillna("")
         profitability["Faturamento"] = profitability["Preço de Venda"] * profitability["Quantidade"]
-        profitability["Custo Total"] = profitability["Preço de Entrada"] * profitability["Quantidade"]
+        profitability["Custo Variável (%)"] = profitability["Origem"].apply(self._get_variable_cost_percentage)
+        profitability["Custo Total"] = (profitability["Preço de Entrada"] * profitability["Quantidade"]) + (
+            profitability["Faturamento"] * profitability["Custo Variável (%)"]
+        )
         profitability["Lucro Bruto"] = profitability["Faturamento"] - profitability["Custo Total"]
         profitability["Margem Bruta (%)"] = pd.Series(0.0, index=profitability.index)
         non_zero = profitability["Faturamento"] > 0
         profitability.loc[non_zero, "Margem Bruta (%)"] = (profitability.loc[non_zero, "Lucro Bruto"] / profitability.loc[non_zero, "Faturamento"] * 100)
         profitability["Descrição do Produto"] = profitability["Descrição do Produto"].fillna("N/A")
-        profitability["Representante"] = profitability["Representante"].astype(str).str.strip().replace({"": "N/A"}).fillna("N/A")
+        default_rep = os.getenv("NOME_PADRAO_REPRESENTANTE", "").strip()
+        if not default_rep:
+            default_rep = "N/A"
+
+        profitability["Representante"] = profitability["Representante"].astype(str).str.strip()
+        missing_rep_mask = profitability["Representante"].isin(["", "N/A", "NA", "None", "none", "nan", "NaN", "<NA>"])
+        profitability.loc[missing_rep_mask, "Representante"] = default_rep
+        profitability["Representante"] = profitability["Representante"].replace({"": default_rep}).fillna(default_rep)
         profitability["UF"] = profitability["UF"].astype(str).str.strip().str.upper().replace({"": "N/A"}).fillna("N/A")
         return profitability
 

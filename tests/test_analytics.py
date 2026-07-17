@@ -1,3 +1,4 @@
+import os
 import unittest
 import pandas as pd
 import numpy as np
@@ -170,10 +171,10 @@ class TestFinancialAnalytics(unittest.TestCase):
         self.assertIn("Margem Bruta (%)", profitability.columns)
         self.assertIn("Faturamento", profitability.columns)
         self.assertGreater(profitability["Lucro Bruto"].sum(), 0.0)
-        self.assertAlmostEqual(profitability.loc[profitability["Código do Produto"] == "A01", "Lucro Bruto"].sum(), 240.0)
+        self.assertAlmostEqual(profitability.loc[profitability["Código do Produto"] == "A01", "Lucro Bruto"].sum(), 114.48)
         self.assertAlmostEqual(
             profitability.loc[profitability["Código do Produto"] == "A01", "Margem Bruta (%)"].iloc[0],
-            50.0,
+            23.85,
             places=2,
         )
 
@@ -189,6 +190,73 @@ class TestFinancialAnalytics(unittest.TestCase):
         self.assertGreater(kpis["gross_profit_total"], 0.0)
         self.assertGreaterEqual(kpis["gross_margin_avg"], 0.0)
         self.assertEqual(kpis["top_product"], "A01")
+
+    def test_build_profitability_dataset_uses_variable_costs_by_origin(self):
+        analytics = SalesAnalytics.__new__(SalesAnalytics)
+        analytics.products_df = pd.DataFrame({
+            "Código": ["A01", "B02", "C03"],
+            "Descrição": ["Produto A", "Produto B", "Produto C"],
+            "PU de entrada": [10.0, 20.0, 40.0],
+            "PU de saída": [20.0, 25.0, 50.0],
+            "Origem": [
+                "Nacional",
+                "Estrangeira - Adquirida no mercado interno",
+                "Estrangeira - Importacao direta",
+            ],
+        })
+        analytics.df = pd.DataFrame({
+            "Pedido ID": ["p1", "p2", "p3"],
+            "Número do Pedido": ["001", "002", "003"],
+            "Código do Produto": ["A01", "B02", "C03"],
+            "Quantidade": [10.0, 5.0, 3.0],
+            "ID da Nota Fiscal": ["nf1", "nf2", "nf3"],
+            "Status da Nota Fiscal": ["ACEITA", "ACEITA", "ACEITA"],
+            "CEP": ["13044-480", "13044-480", "13044-480"],
+            "UF": ["SP", "SP", "SP"],
+            "Cidade": ["Campinas", "Campinas", "Campinas"],
+            "Representante": ["Leonardo", "Leonardo", "Leonardo"],
+        })
+
+        os.environ["CUSTO_VARIAVEL_NACIONAL"] = "0.2615"
+        os.environ["CUSTO_VARIAVEL_IMPORTADO"] = "0.2015"
+
+        profitability = analytics.build_profitability_dataset(analytics.df)
+
+        national_cost = profitability.loc[profitability["Código do Produto"] == "A01", "Custo Total"].iloc[0]
+        treated_as_national_cost = profitability.loc[profitability["Código do Produto"] == "B02", "Custo Total"].iloc[0]
+        imported_cost = profitability.loc[profitability["Código do Produto"] == "C03", "Custo Total"].iloc[0]
+
+        self.assertAlmostEqual(national_cost, 152.30)
+        self.assertAlmostEqual(treated_as_national_cost, 132.6875)
+        self.assertAlmostEqual(imported_cost, 150.225)
+
+    def test_build_profitability_dataset_uses_default_representative_for_missing_values(self):
+        analytics = SalesAnalytics.__new__(SalesAnalytics)
+        analytics.products_df = pd.DataFrame({
+            "Código": ["A01"],
+            "Descrição": ["Produto A"],
+            "PU de entrada": [10.0],
+            "PU de saída": [20.0],
+            "Origem": ["Nacional"],
+        })
+        analytics.df = pd.DataFrame({
+            "Pedido ID": ["p1", "p2", "p3"],
+            "Número do Pedido": ["001", "002", "003"],
+            "Código do Produto": ["A01", "A01", "A01"],
+            "Quantidade": [1.0, 1.0, 1.0],
+            "ID da Nota Fiscal": ["nf1", "nf2", "nf3"],
+            "Status da Nota Fiscal": ["ACEITA", "ACEITA", "ACEITA"],
+            "CEP": ["13044-480", "13044-480", "13044-480"],
+            "UF": ["SP", "SP", "SP"],
+            "Cidade": ["Campinas", "Campinas", "Campinas"],
+            "Representante": ["", "N/A", "Joana"],
+        })
+
+        os.environ["NOME_PADRAO_REPRESENTANTE"] = "Rep Padrão"
+
+        profitability = analytics.build_profitability_dataset(analytics.df)
+
+        self.assertEqual(profitability["Representante"].tolist(), ["Rep Padrão", "Rep Padrão", "Joana"])
 
 
 class TestRepresentativeAnalytics(unittest.TestCase):

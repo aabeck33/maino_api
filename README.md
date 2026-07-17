@@ -45,7 +45,8 @@ Maino_API/
 │
 ├── work/
 │   ├── ncms_export.xlsx              # Resultado do extrator de NCMs
-│   └── pedidos_confirmados.xlsx      # Planilha de entrada do dashboard
+│   ├── pedidos_confirmados.xlsx      # Planilha de entrada do dashboard
+│   └── produtos.xlsx                 # Catálogo de produtos com preço e origem
 │
 ├── .env.example                      # Modelo de variáveis de ambiente
 ├── requirements.txt                  # Dependências Python
@@ -88,7 +89,26 @@ Edite `.env` e preencha:
 ```env
 MAINO_API_TOKEN=seu_token_jwt_aqui
 MAINO_ORDER_STATUS=Pedido gerado
+NOME_PADRAO_REPRESENTANTE=
+CUSTO_VARIAVEL_IMPORTADO=0.2015
+CUSTO_VARIAVEL_NACIONAL=0.2615
 ```
+
+Além do token e do status dos pedidos, o dashboard usa as porcentagens de custo variável para calcular a margem de contribuição. Os percentuais são lidos a partir do `.env` e aplicados conforme a origem do produto no catálogo.
+
+---
+
+## Catálogo de Produtos
+
+O dashboard lê o arquivo [work/produtos.xlsx](work/produtos.xlsx) como catálogo de produtos. Esse arquivo deve conter, no mínimo, as colunas:
+
+- `Código`
+- `Descrição`
+- `PU de entrada`
+- `PU de saída`
+- `Origem`
+
+A coluna `Origem` define a regra de custo variável utilizada no cálculo financeiro. Produtos com origem estrangeira e adquiridos no mercado interno são tratados como nacionais para fins de margem de contribuição.
 
 ---
 
@@ -113,6 +133,8 @@ Acesse no navegador: **http://localhost:8501**
 O painel gera automaticamente arquivos de resultado em [work](work), incluindo:
 - [work/indicadores_financeiros.xlsx](work/indicadores_financeiros.xlsx) com a base detalhada de rentabilidade
 - [work/indicadores_financeiros_resumo.xlsx](work/indicadores_financeiros_resumo.xlsx) com resumos por produto, representante e cliente
+
+Os indicadores financeiros agora consideram o custo variável e a origem do produto para montar os cálculos de faturamento, custo total, lucro bruto e margem de contribuição.
 
 ### Extração de NCMs (script legado)
 
