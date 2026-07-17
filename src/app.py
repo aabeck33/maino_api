@@ -205,7 +205,7 @@ def main():
     # 7. Navigation Tabs
     tabs = st.tabs([
         "📈 Visão Geral", 
-        " Rentabilidade",
+        "💰 Rentabilidade",
         "👥 Representantes de Vendas",
         "📦 Produtos", 
         "🛒 Pedidos", 
