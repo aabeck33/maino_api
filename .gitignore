@@ -30,3 +30,13 @@ __pycache__/
 *.njsproj
 *.sln
 *.swp
+
+# =================================
+# Arquivos Excel gerados
+# =================================
+
+work/*.xlsx
+work/*.xls
+
+# Manter a pasta work no repositório
+!work/.gitkeep
