@@ -15,6 +15,7 @@ from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from utils.pdf_report import generate_executive_pdf
 from utils.logger import setup_logger
 from analytics.processing import SalesAnalytics
 from dashboard.components import apply_css, brand_header
@@ -215,6 +216,24 @@ def main():
         "⚖️ Fiscal", 
         "💡 Insights Gerenciais"
     ])
+
+    # Botão para imprimir o PDF
+    st.sidebar.divider()
+
+    if st.sidebar.button("📄 Gerar Relatório PDF"):
+
+        pdf_file = generate_executive_pdf(
+            analytics,
+            filtered_df
+        )
+
+        with open(pdf_file, "rb") as f:
+            st.sidebar.download_button(
+                label="⬇️ Baixar PDF",
+                data=f,
+                file_name="relatorio_gerencial.pdf",
+                mime="application/pdf"
+            )
 
     # Handle view rendering per tab
     with tabs[0]:
