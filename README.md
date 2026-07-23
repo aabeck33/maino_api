@@ -150,7 +150,7 @@ python src/export_ncms.py
 |---|---|
 | 📈 **Visão Geral** | KPIs de pedidos, volume, produtos únicos, compliance fiscal e top 5 produtos |
 | � **Rentabilidade** | Faturamento, lucro bruto, margem bruta, ranking de produtos e curvas ABC financeiras |
-| 👥 **Representantes de Vendas** | Performance comercial por representante, receita e rentabilidade |
+| 👥 **Representantes de Vendas** | Performance comercial por representante, receita, clientes, recompra e evolução temporal |
 | �📦 **Produtos** | Ranking de produtos, Gráfico de Pareto e Curva ABC |
 | 🛒 **Pedidos** | Estatísticas de pedido, histograma, boxplot e ranking dos maiores pedidos |
 | 🌍 **Geo** | Receita por estado, clientes por estado, ticket médio, top cidades e mapa de calor regional |

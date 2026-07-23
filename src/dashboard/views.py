@@ -136,13 +136,13 @@ def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, i
     customer_summary = analytics.get_profitability_by_customer(profitability_df)
     monthly_df = analytics.get_monthly_profitability(profitability_df)
     abc_revenue, _ = analytics.get_abc_analysis(product_summary, "Faturamento")
-    abc_profit, _ = analytics.get_abc_analysis(product_summary, "Lucro Bruto")
+    abc_profit, _ = analytics.get_abc_analysis(product_summary, "Margem de contribuição")
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
         metric_card("Faturamento Total", format_currency(kpis["revenue_total"]), delta="Receita", delta_type="up")
     with c2:
-        metric_card("Lucro Bruto Total", format_currency(kpis["gross_profit_total"]), delta="Resultado", delta_type="up")
+        metric_card("Margem de contribuição", format_currency(kpis["gross_profit_total"]), delta="Resultado", delta_type="up")
     with c3:
         metric_card("Margem Bruta Média", f"{kpis['gross_margin_avg']:.2f}%", delta="Rentabilidade", delta_type="up")
     with c4:
@@ -158,7 +158,7 @@ def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, i
     if not monthly_df.empty:
         fig_monthly = make_subplots(specs=[[{"secondary_y": True}]])
         fig_monthly.add_trace(ob.Bar(x=monthly_df["Mês"], y=monthly_df["Faturamento"], name="Faturamento", marker_color="#2563eb", opacity=0.8), secondary_y=False)
-        fig_monthly.add_trace(ob.Scatter(x=monthly_df["Mês"], y=monthly_df["Lucro Bruto"], name="Lucro Bruto", line=dict(color="#22c55e", width=3)), secondary_y=False)
+        fig_monthly.add_trace(ob.Scatter(x=monthly_df["Mês"], y=monthly_df["Margem de contribuição"], name="Margem de contribuição", line=dict(color="#22c55e", width=3)), secondary_y=False)
         fig_monthly.add_trace(ob.Scatter(x=monthly_df["Mês"], y=monthly_df["Margem Bruta (%)"], name="Margem Bruta (%)", line=dict(color="#f59e0b", width=3)), secondary_y=True)
         fig_monthly.update_layout(get_plot_layout(is_dark))
         fig_monthly.update_yaxes(title_text="R$", secondary_y=False)
@@ -171,10 +171,10 @@ def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, i
     chart_container("Comparativo Faturamento x Lucro", "Contribuição financeira dos principais produtos")
     if not product_summary.empty:
         compare_df = product_summary.head(10).copy()
-        compare_df = compare_df.sort_values(["Faturamento", "Lucro Bruto"], ascending=True)
+        compare_df = compare_df.sort_values(["Faturamento", "Margem de contribuição"], ascending=True)
         fig_compare = make_subplots(specs=[[{"secondary_y": True}]])
         fig_compare.add_trace(ob.Bar(x=compare_df["Código do Produto"], y=compare_df["Faturamento"], name="Faturamento", marker_color="#2563eb", opacity=0.7), secondary_y=False)
-        fig_compare.add_trace(ob.Scatter(x=compare_df["Código do Produto"], y=compare_df["Lucro Bruto"], name="Lucro Bruto", line=dict(color="#22c55e", width=3)), secondary_y=True)
+        fig_compare.add_trace(ob.Scatter(x=compare_df["Código do Produto"], y=compare_df["Margem de contribuição"], name="Margem de contribuição", line=dict(color="#22c55e", width=3)), secondary_y=True)
         fig_compare.update_layout(get_plot_layout(is_dark))
         fig_compare.update_yaxes(title_text="R$", secondary_y=False)
         fig_compare.update_yaxes(title_text="Lucro (R$)", secondary_y=True)
@@ -187,14 +187,14 @@ def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, i
         chart_container("Top 10 Produtos por Lucro", "Produtos que mais geram resultado financeiro")
         top_profit = product_summary.head(10).copy()
         if not top_profit.empty:
-            top_profit = top_profit.sort_values("Lucro Bruto", ascending=True)
+            top_profit = top_profit.sort_values("Margem de contribuição", ascending=True)
             fig_profit = px.bar(
                 top_profit,
-                x="Lucro Bruto",
+                x="Margem de contribuição",
                 y="Código do Produto",
                 orientation="h",
-                labels={"Lucro Bruto": "Lucro Bruto (R$)", "Código do Produto": "Produto"},
-                color="Lucro Bruto",
+                labels={"Margem de contribuição": "Margem de contribuição (R$)", "Código do Produto": "Produto"},
+                color="Margem de contribuição",
                 color_continuous_scale="Greens",
                 text_auto=",.0f"
             )
@@ -244,9 +244,9 @@ def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, i
             fig_abc_profit = px.bar(
                 abc_profit.head(15),
                 x="Código do Produto",
-                y="Lucro Bruto",
+                y="Margem de contribuição",
                 color="Classe ABC",
-                labels={"Código do Produto": "Produto", "Lucro Bruto": "Lucro Bruto (R$)"},
+                labels={"Código do Produto": "Produto", "Margem de contribuição": "Margem de contribuição (R$)"},
                 color_discrete_map={"A": "#2563eb", "B": "#f59e0b", "C": "#16a34a"}
             )
             fig_abc_profit.update_layout(get_plot_layout(is_dark))
@@ -258,20 +258,20 @@ def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, i
     with c_table1:
         st.markdown("**Top 10 Produtos por Lucro**")
         custom_table(
-            product_summary.head(10)[["Código do Produto", "Faturamento", "Lucro Bruto", "Margem Bruta (%)", "Participação no Lucro (%)"]].rename(columns={"Lucro Bruto": "Lucro Bruto", "Margem Bruta (%)": "Margem Bruta (%)"}),
-            columns_mapping={"Código do Produto": "Produto", "Faturamento": "Faturamento", "Lucro Bruto": "Lucro Bruto", "Margem Bruta (%)": "Margem Bruta (%)", "Participação no Lucro (%)": "% Lucro"}
+            product_summary.head(10)[["Código do Produto", "Faturamento", "Margem de contribuição", "Margem Bruta (%)", "Participação no Lucro (%)"]].rename(columns={"Margem de contribuição": "Margem de contribuição", "Margem Bruta (%)": "Margem Bruta (%)"}),
+            columns_mapping={"Código do Produto": "Produto", "Faturamento": "Faturamento", "Margem de contribuição": "Margem de contribuição", "Margem Bruta (%)": "Margem Bruta (%)", "Participação no Lucro (%)": "% Lucro"}
         )
     with c_table2:
         st.markdown("**Representantes por Lucro**")
         custom_table(
-            rep_summary[["Representante", "Faturamento", "Lucro Bruto", "Margem Bruta (%)"]].rename(columns={"Lucro Bruto": "Lucro Bruto"}),
-            columns_mapping={"Representante": "Representante", "Faturamento": "Faturamento", "Lucro Bruto": "Lucro Bruto", "Margem Bruta (%)": "Margem Bruta (%)"}
+            rep_summary[["Representante", "Faturamento", "Margem de contribuição", "Margem Bruta (%)"]].rename(columns={"Margem de contribuição": "Margem de contribuição"}),
+            columns_mapping={"Representante": "Representante", "Faturamento": "Faturamento", "Margem de contribuição": "Margem de contribuição", "Margem Bruta (%)": "Margem Bruta (%)"}
         )
     with c_table3:
         st.markdown("**Clientes Mais Lucrativos**")
         custom_table(
-            customer_summary[["Cliente", "Faturamento", "Lucro Bruto", "Margem Bruta (%)"]].rename(columns={"Lucro Bruto": "Lucro Bruto"}),
-            columns_mapping={"Cliente": "Cliente", "Faturamento": "Faturamento", "Lucro Bruto": "Lucro Bruto", "Margem Bruta (%)": "Margem Bruta (%)"}
+            customer_summary[["Cliente", "Faturamento", "Margem de contribuição", "Margem Bruta (%)"]].rename(columns={"Margem de contribuição": "Margem de contribuição"}),
+            columns_mapping={"Cliente": "Cliente", "Faturamento": "Faturamento", "Margem de contribuição": "Margem de contribuição", "Margem Bruta (%)": "Margem Bruta (%)"}
         )
 
 
@@ -279,26 +279,8 @@ def render_representatives(df: pd.DataFrame, is_dark: bool) -> None:
     """Renders the sales representatives performance tab."""
     st.markdown("### Representantes de Vendas")
 
-    summary = SalesAnalytics.get_representative_sales_summary(df)
-    rep_rebuy = SalesAnalytics.get_representative_repurchase_rate(df)
+    summary = SalesAnalytics.get_representative_performance(df)
     monthly_evolution = SalesAnalytics.get_representative_monthly_evolution(df)
-    meta_df = SalesAnalytics.get_representative_meta(df)
-
-    if summary.empty:
-        st.info("Nenhum dado de representante disponível nos dados filtrados.")
-        return
-
-    # Merge rep metrics with repurchase and meta if available
-    if not rep_rebuy.empty:
-        # rep_rebuy contains columns: Representante, Clientes_Recorrentes, Clientes_Total, Recompra (%)
-        rep_rebuy_subset = rep_rebuy[[col for col in ["Representante", "Clientes_Recorrentes", "Clientes_Total", "Recompra (%)"] if col in rep_rebuy.columns]]
-        summary = summary.merge(rep_rebuy_subset, on="Representante", how="left")
-    if not meta_df.empty:
-        summary = summary.merge(meta_df, on="Representante", how="left")
-        summary["Atingimento (%)"] = summary.apply(
-            lambda row: row["Receita_Total"] / row["Meta_Valor"] * 100 if row["Meta_Valor"] > 0 else 0.0,
-            axis=1
-        )
 
     summary = summary.sort_values(by="Receita_Total", ascending=False).reset_index(drop=True)
     total_revenue = summary["Receita_Total"].sum()

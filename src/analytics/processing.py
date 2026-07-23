@@ -68,10 +68,8 @@ class SalesAnalytics:
             values = df["Cliente"]
         elif "Nome do Cliente" in df.columns:
             values = df["Nome do Cliente"]
-        elif "CEP" in df.columns:
-            values = df["CEP"]
-        elif "Pedido ID" in df.columns:
-            values = df["Pedido ID"]
+        elif "CPF/CNPJ do Cliente" in df.columns:
+            values = df["CPF/CNPJ do Cliente"]
         else:
             values = pd.Series(["N/A"] * len(df), index=df.index)
 
@@ -225,7 +223,7 @@ class SalesAnalytics:
                 "Quantidade",
                 "Faturamento",
                 "Custo Total",
-                "Lucro Bruto",
+                "Margem de contribuição",
                 "Margem Bruta (%)",
                 "Representante",
                 "Cliente",
@@ -280,10 +278,10 @@ class SalesAnalytics:
         profitability["Custo Total"] = (profitability["Preço de Entrada"] * profitability["Quantidade"]) + (
             profitability["Faturamento"] * profitability["Custo Variável (%)"]
         )
-        profitability["Lucro Bruto"] = profitability["Faturamento"] - profitability["Custo Total"]
+        profitability["Margem de contribuição"] = profitability["Faturamento"] - profitability["Custo Total"]
         profitability["Margem Bruta (%)"] = pd.Series(0.0, index=profitability.index)
         non_zero = profitability["Faturamento"] > 0
-        profitability.loc[non_zero, "Margem Bruta (%)"] = (profitability.loc[non_zero, "Lucro Bruto"] / profitability.loc[non_zero, "Faturamento"] * 100)
+        profitability.loc[non_zero, "Margem Bruta (%)"] = (profitability.loc[non_zero, "Margem de contribuição"] / profitability.loc[non_zero, "Faturamento"] * 100)
         profitability["Descrição do Produto"] = profitability["Descrição do Produto"].fillna("N/A")
         default_rep = os.getenv("NOME_PADRAO_REPRESENTANTE", "").strip()
         if not default_rep or default_rep.upper() in {"N/A", "NA", "NONE", "NULL", "<NA>"}:
@@ -308,27 +306,27 @@ class SalesAnalytics:
                 "top_customer": "N/A",
             }
 
-        gross_profit_total = float(profitability_df["Lucro Bruto"].sum())
+        gross_profit_total = float(profitability_df["Margem de contribuição"].sum())
         revenue_total = float(profitability_df["Faturamento"].sum())
         gross_margin_avg = (gross_profit_total / revenue_total * 100) if revenue_total > 0 else 0.0
 
         product_summary = (
             profitability_df.groupby("Código do Produto", dropna=False, as_index=False)
-            .agg(Faturamento=("Faturamento", "sum"), Lucro_Bruto=("Lucro Bruto", "sum"))
+            .agg(Faturamento=("Faturamento", "sum"), Lucro_Bruto=("Margem de contribuição", "sum"))
             .sort_values("Lucro_Bruto", ascending=False)
         )
         top_product = product_summary.iloc[0]["Código do Produto"] if not product_summary.empty else "N/A"
 
         rep_summary = (
             profitability_df.groupby("Representante", dropna=False, as_index=False)
-            .agg(Lucro_Bruto=("Lucro Bruto", "sum"))
+            .agg(Lucro_Bruto=("Margem de contribuição", "sum"))
             .sort_values("Lucro_Bruto", ascending=False)
         )
         top_representative = rep_summary.iloc[0]["Representante"] if not rep_summary.empty else "N/A"
 
         customer_summary = (
             profitability_df.groupby("Cliente", dropna=False, as_index=False)
-            .agg(Lucro_Bruto=("Lucro Bruto", "sum"))
+            .agg(Lucro_Bruto=("Margem de contribuição", "sum"))
             .sort_values("Lucro_Bruto", ascending=False)
         )
         top_customer = customer_summary.iloc[0]["Cliente"] if not customer_summary.empty else "N/A"
@@ -345,61 +343,61 @@ class SalesAnalytics:
     def get_profitability_by_product(self, profitability_df: pd.DataFrame) -> pd.DataFrame:
         """Aggregates profitability by product."""
         if profitability_df.empty:
-            return pd.DataFrame(columns=["Código do Produto", "Descrição do Produto", "Faturamento", "Lucro Bruto", "Margem Bruta (%)", "Quantidade", "Participação no Lucro (%)", "Participação no Faturamento (%)"])
+            return pd.DataFrame(columns=["Código do Produto", "Descrição do Produto", "Faturamento", "Margem de contribuição", "Margem Bruta (%)", "Quantidade", "Participação no Lucro (%)", "Participação no Faturamento (%)"])
 
         summary = (
             profitability_df.groupby(["Código do Produto", "Descrição do Produto"], dropna=False, as_index=False)
             .agg(
                 Quantidade=("Quantidade", "sum"),
                 Faturamento=("Faturamento", "sum"),
-                Lucro_Bruto=("Lucro Bruto", "sum"),
+                Lucro_Bruto=("Margem de contribuição", "sum"),
                 Custo_Total=("Custo Total", "sum"),
             )
         )
-        summary = summary.rename(columns={"Lucro_Bruto": "Lucro Bruto"})
+        summary = summary.rename(columns={"Lucro_Bruto": "Margem de contribuição"})
         summary["Margem Bruta (%)"] = pd.Series(0.0, index=summary.index)
         non_zero = summary["Faturamento"] > 0
-        summary.loc[non_zero, "Margem Bruta (%)"] = (summary.loc[non_zero, "Lucro Bruto"] / summary.loc[non_zero, "Faturamento"] * 100)
-        total_profit = summary["Lucro Bruto"].sum()
+        summary.loc[non_zero, "Margem Bruta (%)"] = (summary.loc[non_zero, "Margem de contribuição"] / summary.loc[non_zero, "Faturamento"] * 100)
+        total_profit = summary["Margem de contribuição"].sum()
         total_revenue = summary["Faturamento"].sum()
-        summary["Participação no Lucro (%)"] = (summary["Lucro Bruto"] / total_profit * 100) if total_profit > 0 else 0.0
+        summary["Participação no Lucro (%)"] = (summary["Margem de contribuição"] / total_profit * 100) if total_profit > 0 else 0.0
         summary["Participação no Faturamento (%)"] = (summary["Faturamento"] / total_revenue * 100) if total_revenue > 0 else 0.0
-        return summary.sort_values("Lucro Bruto", ascending=False).reset_index(drop=True)
+        return summary.sort_values("Margem de contribuição", ascending=False).reset_index(drop=True)
 
     def get_profitability_by_representative(self, profitability_df: pd.DataFrame) -> pd.DataFrame:
         """Aggregates profitability by representative."""
         if profitability_df.empty:
-            return pd.DataFrame(columns=["Representante", "Faturamento", "Lucro Bruto", "Margem Bruta (%)"])
+            return pd.DataFrame(columns=["Representante", "Faturamento", "Margem de contribuição", "Margem Bruta (%)"])
 
         summary = (
             profitability_df.groupby("Representante", dropna=False, as_index=False)
-            .agg(Faturamento=("Faturamento", "sum"), Lucro_Bruto=("Lucro Bruto", "sum"))
+            .agg(Faturamento=("Faturamento", "sum"), Lucro_Bruto=("Margem de contribuição", "sum"))
         )
-        summary = summary.rename(columns={"Lucro_Bruto": "Lucro Bruto"})
+        summary = summary.rename(columns={"Lucro_Bruto": "Margem de contribuição"})
         summary["Margem Bruta (%)"] = pd.Series(0.0, index=summary.index)
         non_zero = summary["Faturamento"] > 0
-        summary.loc[non_zero, "Margem Bruta (%)"] = (summary.loc[non_zero, "Lucro Bruto"] / summary.loc[non_zero, "Faturamento"] * 100)
-        return summary.sort_values("Lucro Bruto", ascending=False).reset_index(drop=True)
+        summary.loc[non_zero, "Margem Bruta (%)"] = (summary.loc[non_zero, "Margem de contribuição"] / summary.loc[non_zero, "Faturamento"] * 100)
+        return summary.sort_values("Margem de contribuição", ascending=False).reset_index(drop=True)
 
     def get_profitability_by_customer(self, profitability_df: pd.DataFrame) -> pd.DataFrame:
         """Aggregates profitability by customer."""
         if profitability_df.empty:
-            return pd.DataFrame(columns=["Cliente", "Faturamento", "Lucro Bruto", "Margem Bruta (%)"])
+            return pd.DataFrame(columns=["Cliente", "Faturamento", "Margem de contribuição", "Margem Bruta (%)"])
 
         summary = (
             profitability_df.groupby("Cliente", dropna=False, as_index=False)
-            .agg(Faturamento=("Faturamento", "sum"), Lucro_Bruto=("Lucro Bruto", "sum"))
+            .agg(Faturamento=("Faturamento", "sum"), Lucro_Bruto=("Margem de contribuição", "sum"))
         )
-        summary = summary.rename(columns={"Lucro_Bruto": "Lucro Bruto"})
+        summary = summary.rename(columns={"Lucro_Bruto": "Margem de contribuição"})
         summary["Margem Bruta (%)"] = pd.Series(0.0, index=summary.index)
         non_zero = summary["Faturamento"] > 0
-        summary.loc[non_zero, "Margem Bruta (%)"] = (summary.loc[non_zero, "Lucro Bruto"] / summary.loc[non_zero, "Faturamento"] * 100)
-        return summary.sort_values("Lucro Bruto", ascending=False).reset_index(drop=True)
+        summary.loc[non_zero, "Margem Bruta (%)"] = (summary.loc[non_zero, "Margem de contribuição"] / summary.loc[non_zero, "Faturamento"] * 100)
+        return summary.sort_values("Margem de contribuição", ascending=False).reset_index(drop=True)
 
     def get_monthly_profitability(self, profitability_df: pd.DataFrame) -> pd.DataFrame:
         """Builds monthly profitability evolution using the available date column."""
         if profitability_df.empty:
-            return pd.DataFrame(columns=["Mês", "Faturamento", "Lucro Bruto", "Margem Bruta (%)"])
+            return pd.DataFrame(columns=["Mês", "Faturamento", "Margem de contribuição", "Margem Bruta (%)"])
 
         monthly_df = profitability_df.copy()
         date_col = self._find_date_column(monthly_df)
@@ -415,12 +413,12 @@ class SalesAnalytics:
 
         monthly = (
             monthly_df.groupby("Mês", dropna=False, as_index=False)
-            .agg(Faturamento=("Faturamento", "sum"), Lucro_Bruto=("Lucro Bruto", "sum"))
+            .agg(Faturamento=("Faturamento", "sum"), Lucro_Bruto=("Margem de contribuição", "sum"))
         )
-        monthly = monthly.rename(columns={"Lucro_Bruto": "Lucro Bruto"})
+        monthly = monthly.rename(columns={"Lucro_Bruto": "Margem de contribuição"})
         monthly["Margem Bruta (%)"] = pd.Series(0.0, index=monthly.index)
         non_zero = monthly["Faturamento"] > 0
-        monthly.loc[non_zero, "Margem Bruta (%)"] = (monthly.loc[non_zero, "Lucro Bruto"] / monthly.loc[non_zero, "Faturamento"] * 100)
+        monthly.loc[non_zero, "Margem Bruta (%)"] = (monthly.loc[non_zero, "Margem de contribuição"] / monthly.loc[non_zero, "Faturamento"] * 100)
         return monthly.sort_values("Mês").reset_index(drop=True)
 
     @staticmethod
@@ -547,7 +545,7 @@ class SalesAnalytics:
             normalized["Valor Total"] = 0.0
 
         normalized["UF"] = normalized["UF"].astype(str).str.strip().str.upper().replace({"": "N/A", "NONE": "N/A", "N/A": "N/A"})
-        normalized["Cidade"] = normalized["Cidade"].astype(str).str.strip().replace({"": "N/A", "None": "N/A", "nan": "N/A"})
+        normalized["Cidade"] = normalized["Cidade"].astype(str).str.strip().str.upper().replace({"": "N/A", "None": "N/A", "nan": "N/A"})
         normalized.loc[normalized["Cidade"] == "", "Cidade"] = "N/A"
         normalized["Valor Total"] = pd.to_numeric(normalized["Valor Total"], errors="coerce").fillna(0.0)
 
@@ -568,6 +566,7 @@ class SalesAnalytics:
             return pd.DataFrame()
 
         normalized = SalesAnalytics._normalize_geo_data(df)
+        normalized["Cliente_Chave"] = SalesAnalytics._client_identifier(normalized)
         if "Representante" not in normalized.columns:
             normalized["Representante"] = "N/A"
 
@@ -577,7 +576,8 @@ class SalesAnalytics:
             Cidade=("Cidade", lambda values: next((v for v in values if v not in {"", "N/A"}), "N/A")),
             Valor_Total=("Valor Total", "first"),
             Status_da_Nota_Fiscal=("Status da Nota Fiscal", "first"),
-            Representante=("Representante", "first")
+            Representante=("Representante", "first"),
+            Cliente_Chave=("Cliente_Chave", "first")
         )
         summary["Valor_Total"] = pd.to_numeric(summary["Valor_Total"], errors="coerce").fillna(0.0)
         return summary
@@ -598,17 +598,14 @@ class SalesAnalytics:
 
     @staticmethod
     def _client_identifier(df: pd.DataFrame) -> pd.Series:
-        if "CEP" in df.columns and df["CEP"].notna().any():
-            return df["CEP"].astype(str).str.strip().replace({"": "N/A"})
-        if "Cliente" in df.columns and df["Cliente"].notna().any():
-            return df["Cliente"].astype(str).str.strip().replace({"": "N/A"})
-        return df["Pedido ID"].astype(str)
+        if "CPF/CNPJ do Cliente" in df.columns and df["CPF/CNPJ do Cliente"].astype(str).str.strip().replace({"": pd.NA}).notna().any():
+            return df["CPF/CNPJ do Cliente"].astype(str).str.strip().replace({"": "N/A"})
+        return df["Cliente"].astype(str)
 
     @staticmethod
     def _ensure_representante_column(df: pd.DataFrame) -> pd.DataFrame:
         """Ensure the `Representante` column exists and non-empty values are set.
-
-        If the column is missing or values are empty/na, fill with 'Leonardo'.
+           If the column is missing or values are empty/na, fill with 'Leonardo'.
         """
         default_rep = os.getenv("NOME_PADRAO_REPRESENTANTE", "Leonardo")
         if df is None or df.empty:
@@ -638,7 +635,7 @@ class SalesAnalytics:
             df["Valor Total"] = 0.0
         df["Cliente_Chave"] = SalesAnalytics._client_identifier(df)
 
-        order_levels = (
+        '''order_levels = (
             df.groupby(["Pedido ID", "Representante"], dropna=False, as_index=False)
             .agg(
                 Valor_Total=("Valor Total", "first"),
@@ -655,7 +652,18 @@ class SalesAnalytics:
                 Clientes_Unicos=("Cliente_Chave", lambda values: values.nunique()),
                 Produtos_Distintos=("Código_do_Produto", "sum"),
             )
+        )'''
+
+        summary = (
+            df.groupby("Representante", dropna=False, as_index=False)
+            .agg(
+                Receita_Total=("Valor Total", "sum"),
+                Pedidos=("Pedido ID", "nunique"),
+                Clientes_Unicos=("Cliente_Chave", "nunique"),
+                Produtos_Distintos=("Código do Produto", "nunique"),
+            )
         )
+
         summary["Ticket_Medio"] = summary.apply(
             lambda row: row["Receita_Total"] / row["Pedidos"] if row["Pedidos"] > 0 else 0.0,
             axis=1
@@ -750,7 +758,7 @@ class SalesAnalytics:
 
         result = orders.groupby("Cidade", dropna=False, as_index=False).agg(
             Valor_Total=("Valor_Total", "sum"),
-            Clientes=("Pedido ID", "nunique")
+            Clientes=("Cliente_Chave", "nunique")
         )
         return result.sort_values("Valor_Total", ascending=False)
 
@@ -761,7 +769,7 @@ class SalesAnalytics:
             return pd.DataFrame()
 
         result = orders.groupby("UF", dropna=False, as_index=False).agg(
-            Clientes=("Pedido ID", "nunique")
+            Clientes=("Cliente_Chave", "nunique")
         )
         return result.sort_values("Clientes", ascending=False)
 
@@ -773,7 +781,7 @@ class SalesAnalytics:
 
         result = orders.groupby("UF", dropna=False, as_index=False).agg(
             Valor_Total=("Valor_Total", "sum"),
-            Clientes=("Pedido ID", "nunique")
+            Clientes=("Cliente_Chave", "nunique")
         )
         return result.sort_values("Valor_Total", ascending=False)
 
@@ -818,3 +826,65 @@ class SalesAnalytics:
         state_df["Latitude"] = [c[0] for c in coords]
         state_df["Longitude"] = [c[1] for c in coords]
         return state_df[state_df["Latitude"].notna() & state_df["Longitude"].notna()].copy()
+
+
+    @staticmethod
+    def get_representative_performance(df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Consolida indicadores de performance dos representantes:
+        - Receita
+        - Pedidos
+        - Clientes
+        - Ticket Médio
+        - Participação
+        - Recompra
+        - Atingimento da Meta
+        """
+        if df is None or df.empty:
+            return pd.DataFrame()
+
+        summary = SalesAnalytics.get_representative_sales_summary(df)
+
+        if summary.empty:
+            return summary
+
+        rep_rebuy = SalesAnalytics.get_representative_repurchase_rate(df)
+
+        if not rep_rebuy.empty:
+            summary = summary.merge(
+                rep_rebuy[
+                    [
+                        "Representante",
+                        "Clientes_Recorrentes",
+                        "Clientes_Total",
+                        "Recompra (%)"
+                    ]
+                ],
+                on="Representante",
+                how="left"
+            )
+
+        meta_df = SalesAnalytics.get_representative_meta(df)
+
+        if not meta_df.empty:
+            summary = summary.merge(
+                meta_df,
+                on="Representante",
+                how="left"
+            )
+
+            summary["Atingimento (%)"] = summary.apply(
+                lambda row: (
+                    row["Receita_Total"] / row["Meta_Valor"] * 100
+                    if row["Meta_Valor"] > 0
+                    else 0.0
+                ),
+                axis=1
+            )
+
+        summary = summary.sort_values(
+            by="Receita_Total",
+            ascending=False
+        ).reset_index(drop=True)
+
+        return summary
