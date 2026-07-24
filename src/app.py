@@ -166,13 +166,14 @@ def main():
     # Botão para imprimir o PDF
     #st.sidebar.divider()
     st.sidebar.markdown("### Relatórios")
-
-    if st.sidebar.button("📄 Gerar PDF"):
+    if st.sidebar.button(
+            "📄 Gerar PDF",
+            use_container_width=True
+        ):
         pdf_file = generate_executive_pdf(
             analytics,
             filtered_df
         )
-
         with open(pdf_file, "rb") as f:
             st.sidebar.download_button(
                 label="⬇️ Baixar PDF",
@@ -180,7 +181,6 @@ def main():
                 file_name="relatorio_gerencial.pdf",
                 mime="application/pdf"
             )
-
 
     # Export options in sidebar
     #st.sidebar.markdown("---")

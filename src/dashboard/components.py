@@ -1,13 +1,14 @@
 import streamlit as st
+import streamlit.components.v1 as components
 from typing import Optional, List
 import pandas as pd
 
 def apply_css(is_dark: bool) -> None:
     """Injects custom CSS to style the app according to the Unified Design System."""
-    
+
     # Swapping colors based on active theme
     bg = "#09090b" if is_dark else "#ffffff"
-    bg_subtle = "#0c0c0f" if is_dark else "#f9fafb"
+    bg_subtle = "#0b1220" if is_dark else "#f8fafc"
     card = "#0c0c0f" if is_dark else "#ffffff"
     card_hover = "#131316" if is_dark else "#f4f4f5"
     border = "#1e1e24" if is_dark else "#e4e4e7"
@@ -24,6 +25,82 @@ def apply_css(is_dark: bool) -> None:
     amber_muted = "rgba(245,158,11,0.12)" if is_dark else "rgba(217,119,6,0.08)"
     shadow = "none" if is_dark else "0 1px 3px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.03)"
     
+    # ==========================================
+    # CSS ESPECÍFICO PARA CADA TEMA
+    # ==========================================
+    if is_dark:
+        theme_css = """
+        div[role="listbox"] {
+            background: #18181b !important;
+            color: white !important;
+            border: 1px solid #27272a !important;
+        }
+        div[role="option"] {
+            background: #18181b !important;
+            color: white !important;
+        }
+        div[role="option"]:hover {
+            background: #27272a !important;
+        }
+        .stDownloadButton button {
+            background: #18181b !important;
+            color: white !important;
+            border: 1px solid #27272a !important;
+            border-radius: 12px !important;
+        }
+        .stDownloadButton button:hover {
+            background: #27272a !important;
+        }
+        .stSelectbox svg {
+            color: #ffffff !important;
+            fill: #ffffff !important;
+        }
+        """
+    else:
+        theme_css = """
+        div[role="listbox"] {
+            background: #ffffff !important;
+            color: #09090b !important;
+            border: 1px solid #d4d4d8 !important;
+        }
+        div[role="option"] {
+            background: #ffffff !important;
+            color: #09090b !important;
+        }
+        div[role="option"]:hover {
+            background: #f4f4f5 !important;
+        }
+        .stDownloadButton button {
+            background: #ffffff !important;
+            color: #09090b !important;
+            border: 1px solid #d4d4d8 !important;
+            border-radius: 12px !important;
+        }
+        .stDownloadButton button:hover {
+            background: #f4f4f5 !important;
+        }
+        [data-baseweb="select"] {
+            background: #ffffff !important;
+        }
+        [data-baseweb="select"] svg {
+            color: #000000 !important;
+            fill: #000000 !important;
+            opacity: 1 !important;
+        }
+        [data-baseweb="select"] * {
+            color: #09090b !important;
+        }
+        [data-baseweb="select"] svg,
+        [data-baseweb="popover"] svg {
+            color: #000000 !important;
+            fill: #000000 !important;
+            opacity: 1 !important;
+        }
+        [data-baseweb="select"] > div:last-child {
+            background: #f4f4f5 !important;
+        }
+        """
+
     css = f"""
     <style>
         /* Unified Theme variables */
@@ -320,6 +397,40 @@ def apply_css(is_dark: bool) -> None:
             margin-top: 0.3rem;
             line-height: 1.4;
         }}
+        section[data-testid="stSidebar"] .stTextInput,
+        section[data-testid="stSidebar"] .stSelectbox,
+        section[data-testid="stSidebar"] .stDateInput {{
+            margin-bottom: -8px;
+        }}
+        section[data-testid="stSidebar"] label {{
+            margin-bottom: 2px !important;
+        }}
+        section[data-testid="stSidebar"] .stButton > button {{
+            border-radius: 12px;
+            height: 48px;
+            width: 100%;
+            font-weight: 600;
+        }}
+        .stTextInput input,
+        .stDateInput input {{
+            border-radius: 12px !important;
+        }}
+        .stSelectbox div[data-baseweb="select"] {{
+            border-radius: 12px !important;
+        }}
+
+        {theme_css}
+
+        /* ==========================================
+        INPUTS E SELECTS
+        ========================================== */
+        .stTextInput input,
+        .stDat*Input input {{
+            border-radius: *2px !important;
+        }}
+        .stSelectbox d*v[data-baseweb="select"] {{
+            bo*der-radius: 12px !important;
+        }}
     </style>
     """
     st.markdown(css, unsafe_allow_html=True)
@@ -340,7 +451,7 @@ def metric_card(label: str, value: str, delta: Optional[str] = None, delta_type:
 
 def brand_header(title: str, is_dark: bool, toggle_callback) -> None:
     """Renders the executive branding header with title, subtitle and theme toggle."""
-    col_left, col_right = st.columns([5, 1])
+    col_left, col_theme, col_sidebar = st.columns([5, 1, 1])
     with col_left:
         st.markdown(f"""
         <div class="brand-wrap-inline">
@@ -348,9 +459,30 @@ def brand_header(title: str, is_dark: bool, toggle_callback) -> None:
             <div class="brand-subtitle">Dashboard Executivo de Inteligência de Vendas e Notas Fiscais</div>
         </div>
         """, unsafe_allow_html=True)
-    with col_right:
-        theme_label = "☀️ Modo Claro" if is_dark else "🌙 Modo Escuro"
-        st.button(theme_label, on_click=toggle_callback, use_container_width=True)
+    with col_theme:
+        theme_label = ("☀️ Modo Claro"
+            if is_dark
+            else "🌙 Modo Escuro"
+        )
+        st.button(
+            theme_label,
+            on_click=toggle_callback,
+            use_container_width=True
+        )
+    with col_sidebar:
+        if st.button("🧭 Restore Sidebar"):
+            components.html(
+                """
+                <script>
+                localStorage.setItem(
+                    "stSidebarCollapsed-",
+                    false
+                );
+                window.parent.location.reload();
+                </script>
+                """,
+                height=0,
+            )
         
     st.markdown("<hr style='margin: 0.5rem 0 1.5rem 0; border: 0; border-top: 1px solid var(--border);'>", unsafe_allow_html=True)
 

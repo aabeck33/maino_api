@@ -17,10 +17,11 @@ from dotenv import load_dotenv
 from utils.geo import BRAZIL_STATE_CENTROIDS, map_cep_to_uf
 from utils.logger import setup_logger
 
-MIN_PED_TICKET_MEDIO = 4
-
 logger = setup_logger("maino_analytics")
 load_dotenv()
+
+MIN_PED_TICKET_MEDIO = 4
+LUCRO_OPERACIONAL_CUSTO_FIXO = float(os.getenv("LUCRO_OPERACIONAL_CUSTO_FIXO","25"))
 
 class SalesAnalytics:
     """
@@ -333,6 +334,17 @@ class SalesAnalytics:
         )
         top_customer = customer_summary.iloc[0]["Cliente"] if not customer_summary.empty else "N/A"
 
+        fixed_cost_pct = (LUCRO_OPERACIONAL_CUSTO_FIXO)
+        estimated_operating_profit_pct = (
+            gross_margin_avg
+            - fixed_cost_pct
+        )
+        estimated_operating_profit_value = (
+            revenue_total
+            * estimated_operating_profit_pct
+            / 100
+        )
+
         return {
             "revenue_total": revenue_total,
             "gross_profit_total": gross_profit_total,
@@ -340,6 +352,9 @@ class SalesAnalytics:
             "top_product": top_product,
             "top_representative": top_representative,
             "top_customer": top_customer,
+            "fixed_cost_pct": fixed_cost_pct,
+            "estimated_operating_profit_pct": estimated_operating_profit_pct,
+            "estimated_operating_profit_value": estimated_operating_profit_value,
         }
 
     def get_profitability_by_product(self, profitability_df: pd.DataFrame) -> pd.DataFrame:

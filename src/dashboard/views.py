@@ -152,6 +152,32 @@ def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, i
     with c6:
         metric_card("Cliente Mais Lucrativo", kpis["top_customer"], delta="Top Cliente")
 
+    st.markdown("<br>",unsafe_allow_html=True)
+    c7, c8 = st.columns(2)
+    with c7:
+        metric_card(
+            "Lucro Operacional Estimado",
+            format_currency(
+                kpis[
+                    "estimated_operating_profit_value"
+                ]
+            ),
+            delta=(
+                f"CF "
+                f"{kpis['fixed_cost_pct']:.0f}%"
+            ),
+            delta_type="up"
+        )
+    with c8:
+        metric_card(
+            "Margem Operacional",
+            (
+                f"{kpis['estimated_operating_profit_pct']:.2f}%"
+            ),
+            delta="Após Custos Fixos",
+            delta_type="up"
+        )
+
     st.markdown("<div style='margin: 1rem 0;'></div>", unsafe_allow_html=True)
 
     chart_container("Evolução Mensal de Faturamento, Lucro e Margem", "Comparativo financeiro pelo período analisado")

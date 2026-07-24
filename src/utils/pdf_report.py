@@ -8,6 +8,7 @@ from PIL import Image as PILImage
 from plotly.subplots import make_subplots
 from pathlib import Path
 from datetime import datetime
+from reportlab.pdfgen import canvas
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import A4
 from reportlab.platypus import (
@@ -88,11 +89,11 @@ def add_page_number(canvas, doc):
         # =========================
         canvas.line(40,45,555,45)
         canvas.setFont("Helvetica",8)
-        canvas.drawString(
+        '''canvas.drawString(
             45,
             30,
             f"Página {doc.page}"
-        )
+        )'''
         canvas.drawRightString(
             545,
             30,
@@ -100,6 +101,38 @@ def add_page_number(canvas, doc):
         )
 
     canvas.restoreState()
+
+class NumberedCanvas(canvas.Canvas):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._saved_page_states = []
+
+    def showPage(self):
+        self._saved_page_states.append(
+            dict(self.__dict__)
+        )
+        self._startPage()
+
+    def save(self):
+        total_pages = len(
+            self._saved_page_states
+        )
+        for state in self._saved_page_states:
+            self.__dict__.update(state)
+            self.draw_page_number(
+                total_pages
+            )
+            super().showPage()
+        super().save()
+
+    def draw_page_number(self,total_pages):
+        if self._pageNumber > 1:
+            self.setFont("Helvetica",8)
+            self.drawString(
+                45,
+                30,
+                f"Página {self._pageNumber} de {total_pages}"
+            )
 
 
 def add_cover_footer(canvas, doc):
@@ -294,14 +327,19 @@ def generate_executive_pdf(analytics, filtered_df, output_path="relatorio_gerenc
     elements.append(Spacer(1, 20))
 
     texto = f"""
-    A operação apresentou faturamento total de
-    {brl(financial['revenue_total'])},
-    com margem de contribuição de
-    {brl(financial['gross_profit_total'])}
-    e margem média de
-    {financial['gross_margin_avg']:.2f}%.
-    """
-
+            O período apresentou faturamento de
+            <b>{brl(financial['revenue_total'])}</b>,
+            com margem de contribuição média de
+            <b>{financial['gross_margin_avg']:.2f}%</b>.
+            Considerando uma estrutura de custos
+            fixos estimada em
+            <b>{financial['fixed_cost_pct']:.2f}%</b>,
+            a operação apresenta lucro operacional
+            estimado de
+            <b>{financial['estimated_operating_profit_pct']:.2f}%</b>
+            equivalente a
+            <b>{brl(financial['estimated_operating_profit_value'])}</b>.
+            """
     kpis = SalesAnalytics.calculate_kpis(filtered_df)
 
     resumo = [
@@ -309,9 +347,11 @@ def generate_executive_pdf(analytics, filtered_df, output_path="relatorio_gerenc
         ["Faturamento Total", brl(financial["revenue_total"])],
         ["Margem de Contribuição", brl(financial["gross_profit_total"])],
         ["Margem Média", f'{financial["gross_margin_avg"]:.2f}%'],
-        ["Pedidos", f'{kpis["total_orders"]:,}'],
-        ["Produtos", f'{kpis["unique_products"]:,}'],
-        ["Taxa NF", f'{kpis["nf_emission_rate"]:.2f}%']
+        ["Total de Pedidos", f'{kpis["total_orders"]:,}'],
+        ["Produtos únicos", f'{kpis["unique_products"]:,}'],
+        ["Taxa NF", f'{kpis["nf_emission_rate"]:.2f}%'],
+        ["Lucro Operacional Estimado", brl(financial["estimated_operating_profit_value"])],
+        ["Margem Operacional",(f"{financial['estimated_operating_profit_pct']:.2f}%")],
     ]
 
     elements.append(
@@ -336,13 +376,9 @@ def generate_executive_pdf(analytics, filtered_df, output_path="relatorio_gerenc
         TableStyle([
             ("BACKGROUND",(0,0),(-1,0),colors.HexColor("#1E3A8A")),
             ("TEXTCOLOR",(0,0),(-1,0),colors.white),
-
             ("FONTNAME",(0,0),(-1,0),"Helvetica-Bold"),
-
             ("BOX",(0,0),(-1,-1),1.5,colors.HexColor("#1E3A8A")),
-
             ("INNERGRID",(0,0),(-1,-1),0.5,colors.HexColor("#CBD5E1")),
-
             ("ROWBACKGROUNDS",
             (0,1),
             (-1,-1),
@@ -911,7 +947,8 @@ def generate_executive_pdf(analytics, filtered_df, output_path="relatorio_gerenc
     doc.build(
         elements,
         onFirstPage=add_cover_footer,
-        onLaterPages=add_page_number
+        onLaterPages=add_page_number,
+        canvasmaker=NumberedCanvas
     )
 
     return Path(output_path)
