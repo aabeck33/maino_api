@@ -162,6 +162,25 @@ def main():
             customer_summary.to_excel(writer, sheet_name="Clientes", index=False)
         logger.info("Resumo financeiro exportado para %s", summary_output_path)
 
+
+    # Botão para imprimir o PDF
+    st.sidebar.divider()
+
+    if st.sidebar.button("📄 Gerar Relatório PDF"):
+        pdf_file = generate_executive_pdf(
+            analytics,
+            filtered_df
+        )
+
+        with open(pdf_file, "rb") as f:
+            st.sidebar.download_button(
+                label="⬇️ Baixar PDF",
+                data=f,
+                file_name="relatorio_gerencial.pdf",
+                mime="application/pdf"
+            )
+
+
     # Export options in sidebar
     st.sidebar.markdown("---")
     st.sidebar.markdown("### 📥 Exportação")
@@ -216,24 +235,6 @@ def main():
         "⚖️ Fiscal", 
         "💡 Insights Gerenciais"
     ])
-
-    # Botão para imprimir o PDF
-    st.sidebar.divider()
-
-    if st.sidebar.button("📄 Gerar Relatório PDF"):
-
-        pdf_file = generate_executive_pdf(
-            analytics,
-            filtered_df
-        )
-
-        with open(pdf_file, "rb") as f:
-            st.sidebar.download_button(
-                label="⬇️ Baixar PDF",
-                data=f,
-                file_name="relatorio_gerencial.pdf",
-                mime="application/pdf"
-            )
 
     # Handle view rendering per tab
     with tabs[0]:
