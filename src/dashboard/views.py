@@ -298,7 +298,7 @@ def render_representatives(df: pd.DataFrame, is_dark: bool) -> None:
     with c4:
         metric_card("Pedidos Totais", f"{total_orders:,}", delta="Pedidos")
     with c5:
-        metric_card("Mix de Produtos", f"{int(summary['Produtos_Distintos'].max()):,}", delta="SKU distintos")
+        metric_card("Maior Mix por Representantes", f"{int(summary['Produtos_Distintos'].max()):,}", delta="SKU distintos")
 
     st.markdown("<div style='margin: 1rem 0;'></div>", unsafe_allow_html=True)
 
