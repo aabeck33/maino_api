@@ -945,6 +945,19 @@ def generate_executive_pdf(
     elements.append(Spacer(1, 10))
 
     elements.append(
+        Paragraph(
+            """
+            Para garantir consistência estatística,
+            estados com menos de 3 pedidos foram
+            excluídos dos cálculos de ticket médio.
+            """,
+            styles["BodyText"]
+        )
+    )
+
+    elements.append(Spacer(1, 10))
+
+    elements.append(
         Image(
             str(receita_estado_png),
             width=GRAPH_WIDTH,
@@ -967,6 +980,7 @@ def generate_executive_pdf(
 
     dados = [[
         "UF",
+        "Pedidos",
         "Clientes",
         "Receita",
         "Ticket Médio"
@@ -975,6 +989,7 @@ def generate_executive_pdf(
     for _, row in geo.iterrows():
         dados.append([
             row["UF"],
+            int(row["Pedidos"]),
             int(row["Clientes"]),
             brl(row["Valor_Total"]),
             brl(row["Ticket Médio"])
@@ -982,7 +997,7 @@ def generate_executive_pdf(
 
     tabela = Table(
         dados,
-        colWidths=[60,80,150,150]
+        colWidths=[50,60,70,140,140]
     )
 
     tabela.setStyle(

@@ -17,6 +17,8 @@ from dotenv import load_dotenv
 from utils.geo import BRAZIL_STATE_CENTROIDS, map_cep_to_uf
 from utils.logger import setup_logger
 
+MIN_PED_TICKET_MEDIO = 4
+
 logger = setup_logger("maino_analytics")
 load_dotenv()
 
@@ -779,9 +781,18 @@ class SalesAnalytics:
         if orders.empty:
             return pd.DataFrame()
 
-        result = orders.groupby("UF", dropna=False, as_index=False).agg(
+        '''result = orders.groupby("UF", dropna=False, as_index=False).agg(
             Valor_Total=("Valor_Total", "sum"),
             Clientes=("Cliente_Chave", "nunique")
+        )'''
+        result = orders.groupby(
+            "UF",
+            dropna=False,
+            as_index=False
+        ).agg(
+            Valor_Total=("Valor_Total", "sum"),
+            Clientes=("Cliente_Chave", "nunique"),
+            Pedidos=("Pedido ID", "nunique")
         )
         return result.sort_values("Valor_Total", ascending=False)
 
@@ -791,17 +802,43 @@ class SalesAnalytics:
         if state_df.empty:
             return pd.DataFrame()
 
+        # Remover estados com menos de 3 pedidos
+        state_df = state_df[
+            state_df["Pedidos"] >= MIN_PED_TICKET_MEDIO
+        ].copy()
+        if state_df.empty:
+            return pd.DataFrame()
+
+        # Remover estados com menos de 3 clientes compradores
+        '''state_df = state_df[state_df["Clientes"] >= 3].copy()
+        if state_df.empty:
+            return pd.DataFrame()'''
+
         state_df["Ticket Médio"] = state_df.apply(
-            lambda row: row["Valor_Total"] / row["Clientes"] if row["Clientes"] > 0 else 0.0,
+            lambda row: (
+                row["Valor_Total"] / row["Clientes"]
+                if row["Clientes"] > 0
+                else 0.0
+            ),
             axis=1
         )
+
         state_df["Participação Clientes (%)"] = (
-            state_df["Clientes"] / state_df["Clientes"].sum() * 100
+            state_df["Clientes"]
+            / state_df["Clientes"].sum()
+            * 100
         )
+
         state_df["Participação Receita (%)"] = (
-            state_df["Valor_Total"] / state_df["Valor_Total"].sum() * 100
+            state_df["Valor_Total"]
+            / state_df["Valor_Total"].sum()
+            * 100
         )
-        return state_df.sort_values("Ticket Médio", ascending=False)
+
+        return state_df.sort_values(
+            "Ticket Médio",
+            ascending=False
+        )
 
     @staticmethod
     def get_top_cities_by_revenue(df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:

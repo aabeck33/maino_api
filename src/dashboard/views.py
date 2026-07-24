@@ -622,6 +622,7 @@ def render_geography(df: pd.DataFrame, is_dark: bool) -> None:
     chart_container_end()
 
     chart_container("Ticket Médio por Estado", "Faturamento total dividido pela quantidade de clientes compradores")
+    st.caption("Estados com poucos pedidos foram excluídos desta análise para evitar distorções estatísticas.")
     if not state_ticket.empty:
         fig_ticket = px.bar(
             state_ticket,
@@ -635,13 +636,14 @@ def render_geography(df: pd.DataFrame, is_dark: bool) -> None:
         fig_ticket.update_layout(get_plot_layout(is_dark))
         st.plotly_chart(fig_ticket, use_container_width=True, config={"displayModeBar": False})
         custom_table(
-            state_ticket[["UF", "Clientes", "Valor_Total", "Ticket Médio", "Participação Clientes (%)", "Participação Receita (%)"]].rename(
+            state_ticket[["UF", "Pedidos", "Clientes", "Valor_Total", "Ticket Médio", "Participação Clientes (%)", "Participação Receita (%)"]].rename(
                 columns={
                     "Valor_Total": "Receita Total"
                 }
             ),
             columns_mapping={
                 "UF": "UF",
+                "Pedidos": "Pedidos",
                 "Clientes": "Clientes Compradores",
                 "Receita Total": "Receita Total",
                 "Ticket Médio": "Ticket Médio",
