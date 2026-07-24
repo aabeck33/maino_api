@@ -164,9 +164,10 @@ def main():
 
 
     # Botão para imprimir o PDF
-    st.sidebar.divider()
+    #st.sidebar.divider()
+    st.sidebar.markdown("### Relatórios")
 
-    if st.sidebar.button("📄 Gerar Relatório PDF"):
+    if st.sidebar.button("📄 Gerar PDF"):
         pdf_file = generate_executive_pdf(
             analytics,
             filtered_df
@@ -182,7 +183,7 @@ def main():
 
 
     # Export options in sidebar
-    st.sidebar.markdown("---")
+    #st.sidebar.markdown("---")
     st.sidebar.markdown("### 📥 Exportação")
 
     if not filtered_df.empty:
@@ -215,7 +216,7 @@ def main():
             logger.error("Erro ao preparar exportação de rentabilidade: %s", e, exc_info=True)
             st.sidebar.warning("Erro ao preparar botão de exportação financeira.")
 
-    st.sidebar.markdown("---")
+    #st.sidebar.markdown("---")
     st.sidebar.markdown(
         f"<p style='font-size:0.72rem;color:#71717a;text-align:center;'>Total Filtro: {len(filtered_df)} linhas</p>",
         unsafe_allow_html=True

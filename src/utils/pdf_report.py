@@ -4,6 +4,7 @@
 '''
 import plotly.express as px
 import plotly.graph_objects as go
+from PIL import Image as PILImage
 from plotly.subplots import make_subplots
 from pathlib import Path
 from datetime import datetime
@@ -21,23 +22,21 @@ from reportlab.platypus import (
 from reportlab.lib.styles import getSampleStyleSheet
 from analytics.processing import SalesAnalytics
 
+
 GRAPH_WIDTH = 520
 GRAPH_HEIGHT = 320
 
-images_dir = Path("pdf_assets")
-images_dir.mkdir(
-    exist_ok=True
+images_dir = (
+    Path(__file__).resolve().parent.parent
+    / "utils"
+    / "pdf_assets"
 )
 
-logo_path = Path(
-    __file__
-).resolve().parent.parent / "pdf_assets" / "logo.png"
+logo_path = images_dir / "logo.png"
+
 
 def brl(valor):
     return f"R$ {valor:,.2f}"
-
-
-from reportlab.lib import colors
 
 
 def add_page_number(canvas, doc):
@@ -79,38 +78,16 @@ def add_page_number(canvas, doc):
         # =========================
         # Cabeçalho
         # =========================
-        canvas.setStrokeColor(
-            colors.HexColor("#1E3A8A")
-        )
-        canvas.line(
-            40,
-            785,
-            555,
-            785
-        )
-        canvas.setFont(
-            "Helvetica-Bold",
-            11
-        )
-        canvas.drawString(
-            45,
-            795,
-            "MAINO EXECUTIVO"
-        )
+        canvas.setStrokeColor(colors.HexColor("#1E3A8A"))
+        canvas.line(40,785,555,785)
+        canvas.setFont("Helvetica-Bold",11)
+        canvas.drawString(45,795,"All Drive Transmission")
 
         # =========================
         # Rodapé
         # =========================
-        canvas.line(
-            40,
-            45,
-            555,
-            45
-        )
-        canvas.setFont(
-            "Helvetica",
-            8
-        )
+        canvas.line(40,45,555,45)
+        canvas.setFont("Helvetica",8)
         canvas.drawString(
             45,
             30,
@@ -125,12 +102,21 @@ def add_page_number(canvas, doc):
     canvas.restoreState()
 
 
-def generate_executive_pdf(
-    analytics,
-    filtered_df,
-    output_path="relatorio_gerencial.pdf"
-):
+def add_cover_footer(canvas, doc):
+    canvas.saveState()
+    canvas.setFont("Helvetica",10)
 
+    # Centralizado horizontalmente
+    canvas.drawCentredString(
+        A4[0] / 2,
+        30,
+        "Uso Interno - Diretoria"
+    )
+
+    canvas.restoreState()
+
+
+def generate_executive_pdf(analytics, filtered_df, output_path="relatorio_gerencial.pdf"):
     doc = SimpleDocTemplate(
         output_path,
         pagesize=A4
@@ -146,6 +132,9 @@ def generate_executive_pdf(
     styles["Heading2"].textColor = colors.HexColor("#334155")
     styles["Heading2"].fontSize = 14
     styles["Heading2"].leading = 18
+    styles["Heading3"].textColor = colors.HexColor("#334155")
+    styles["Heading3"].fontSize = 12
+    styles["Heading3"].leading = 14
 
 
     elements = []
@@ -153,21 +142,30 @@ def generate_executive_pdf(
     # ==================================================
     # CAPA
     # ==================================================
-    if logo_path.exists():
-        elements.append(
-            Spacer(1, 80)
-        )
+    '''if logo_path.exists():
+        elements.append(Spacer(1, 80))
         elements.append(
             Image(
                 str(logo_path),
                 width=160,
                 height=160,
             )
-        )
-
+        )'''
+    img = PILImage.open(logo_path)
+    img_width, img_height = img.size
+    desired_width = 220
+    desired_height = (
+        desired_width * img_height
+    ) / img_width
     elements.append(
-        Spacer(1, 40)
+        Image(
+            str(logo_path),
+            width=desired_width,
+            height=desired_height
+        )
     )
+
+    elements.append(Spacer(1, 40))
 
     elements.append(
         Paragraph(
@@ -176,9 +174,7 @@ def generate_executive_pdf(
         )
     )
 
-    elements.append(
-        Spacer(1, 120)
-    )
+    elements.append(Spacer(1, 120))
 
     elements.append(
         Paragraph(
@@ -187,45 +183,12 @@ def generate_executive_pdf(
         )
     )
 
-    elements.append(
-        Spacer(1, 40)
-    )
+    elements.append(Spacer(1, 100))
 
     elements.append(
         Paragraph(
             f"Gerado em: {datetime.now().strftime('%d/%m/%Y %H:%M')}",
-            styles["Heading2"]
-        )
-    )
-
-    elements.append(
-        Spacer(1, 30)
-    )
-
-    elements.append(
-        Paragraph(
-            "Maino Executivo",
-            styles["Heading2"]
-        )
-    )
-
-    elements.append(
-        Spacer(1, 80)
-    )
-
-    elements.append(
-        Paragraph(
-            "Uso interno - Diretoria",
-            styles["Normal"]
-        )
-    )
-
-    elements.append(Spacer(1, 30))
-
-    elements.append(
-        Paragraph(
-            "Maino Executivo",
-            styles["Heading2"]
+            styles["Heading3"]
         )
     )
 
@@ -234,17 +197,13 @@ def generate_executive_pdf(
     # ==================================================
     # SUMÁRIO EXECUTIVO
     # ==================================================
+    profitability_df = analytics.build_profitability_dataset(filtered_df)
+    financial = analytics.calculate_financial_kpis(profitability_df)
+    monthly_df = analytics.get_monthly_profitability(profitability_df)
 
-    profitability_df = analytics.build_profitability_dataset(
-        filtered_df
-    )
-
-    financial = analytics.calculate_financial_kpis(
-        profitability_df
-    )
-
-    monthly_df = analytics.get_monthly_profitability(
-        profitability_df
+    show_monthly_section = (
+        not monthly_df.empty
+        and len(monthly_df) > 1
     )
 
     if not monthly_df.empty:
@@ -319,13 +278,8 @@ def generate_executive_pdf(
             height=900
         )
 
-
-    ultimo_faturamento = \
-        monthly_df.iloc[-1]["Faturamento"]
-
-    primeiro_faturamento = \
-        monthly_df.iloc[0]["Faturamento"]
-
+    ultimo_faturamento = monthly_df.iloc[-1]["Faturamento"]
+    primeiro_faturamento = monthly_df.iloc[0]["Faturamento"]
     if primeiro_faturamento > 0:
         crescimento = (
             (
@@ -337,10 +291,7 @@ def generate_executive_pdf(
     else:
         crescimento = 0
 
-
-    elements.append(
-        Spacer(1, 20)
-    )
+    elements.append(Spacer(1, 20))
 
     texto = f"""
     A operação apresentou faturamento total de
@@ -351,16 +302,7 @@ def generate_executive_pdf(
     {financial['gross_margin_avg']:.2f}%.
     """
 
-    elements.append(
-        Paragraph(
-            texto,
-            styles["BodyText"]
-        )
-    )
-
-    kpis = SalesAnalytics.calculate_kpis(
-        filtered_df
-    )
+    kpis = SalesAnalytics.calculate_kpis(filtered_df)
 
     resumo = [
         ["Indicador", "Valor"],
@@ -378,6 +320,15 @@ def generate_executive_pdf(
             styles["Heading1"]
         )
     )
+
+    elements.append(
+        Paragraph(
+            texto,
+            styles["BodyText"]
+        )
+    )
+
+    elements.append(Spacer(1, 20))
 
     table = Table(resumo, colWidths=[220, 180])
 
@@ -407,56 +358,52 @@ def generate_executive_pdf(
 
     elements.append(table)
 
-    elements.append(PageBreak())
-
     # ==================================================
     # EVOLUÇÃO MENSAL
     # ==================================================
-    elements.append(
-        Paragraph(
-            "Evolução Mensal",
-            styles["Heading1"]
-        )
-    )
-
-    elements.append(
-        Paragraph(
-            """
-            Acompanhamento da receita ao longo do tempo.
-            Permite identificar tendências de crescimento,
-            sazonalidade e possíveis oscilações de mercado.
-            """,
-            styles["BodyText"]
-        )
-    )
-
-    elements.append(
-        Spacer(1, 15)
-    )
-
-    elements.append(
-        Paragraph(
-            f"""
-            O faturamento variou
-            {crescimento:.1f}%
-            entre o primeiro e o último período disponível.
-            """,
-            styles["BodyText"]
-        )
-    )
-
-    elements.append(
-        Spacer(1, 15)
-    )
-
-    if not monthly_df.empty:
+    if show_monthly_section:
+        elements.append(PageBreak())
         elements.append(
-            Image(
-                str(monthly_png),
-                width=GRAPH_WIDTH,
-                height=GRAPH_HEIGHT
+            Paragraph(
+                "Evolução Mensal",
+                styles["Heading1"]
             )
         )
+
+        elements.append(
+            Paragraph(
+                """
+                Acompanhamento da receita ao longo do tempo.
+                Permite identificar tendências de crescimento,
+                sazonalidade e possíveis oscilações de mercado.
+                """,
+                styles["BodyText"]
+            )
+        )
+
+        elements.append(Spacer(1, 15))
+
+        elements.append(
+            Paragraph(
+                f"""
+                O faturamento variou
+                {crescimento:.1f}%
+                entre o primeiro e o último período disponível.
+                """,
+                styles["BodyText"]
+            )
+        )
+
+        elements.append(Spacer(1, 15))
+
+        if not monthly_df.empty:
+            elements.append(
+                Image(
+                    str(monthly_png),
+                    width=GRAPH_WIDTH,
+                    height=GRAPH_HEIGHT
+                )
+            )
 
 
     # ==================================================
@@ -465,71 +412,6 @@ def generate_executive_pdf(
     elements.append(PageBreak())
     product_summary = analytics.get_profitability_by_product(profitability_df)
     top_produto = product_summary.iloc[0]
-    top5_concentracao = (
-        product_summary
-        .head(5)["Faturamento"]
-        .sum()
-        /
-        product_summary["Faturamento"].sum()
-        * 100
-    )
-
-    # ==========================================
-    # Diagnóstico automático de concentração
-    # ==========================================
-    if top5_concentracao >= 70:
-        risco_portfolio = (
-            f"""
-            Existe um nível elevado de concentração
-            de receita.
-
-            Os cinco principais produtos representam
-            {top5_concentracao:.1f}% do faturamento
-            total analisado.
-
-            A companhia apresenta forte dependência
-            desse grupo de produtos.
-            """
-        )
-    elif top5_concentracao >= 50:
-        risco_portfolio = (
-            f"""
-            Existe uma concentração moderada de receita.
-
-            Os cinco principais produtos representam
-            {top5_concentracao:.1f}% do faturamento.
-
-            Recomenda-se monitorar o comportamento
-            desses produtos para evitar aumento da
-            dependência comercial.
-            """
-        )
-    else:
-        risco_portfolio = (
-            f"""
-            O faturamento apresenta boa distribuição
-            entre os produtos comercializados.
-
-            Os cinco principais produtos representam
-            {top5_concentracao:.1f}% do faturamento.
-
-            O risco de concentração atualmente é baixo.
-            """
-        )
-
-
-    elements.append(
-        Paragraph(
-            f"""
-            O produto <b>{top_produto['Código do Produto']}</b>
-            apresentou a maior contribuição financeira
-            no período analisado.
-            """,
-            styles["BodyText"]
-        )
-    )
-
-    elements.append(Spacer(1, 15))
 
     fig = px.bar(
         product_summary.head(10),
@@ -559,31 +441,6 @@ def generate_executive_pdf(
     )
 
     elements.append(
-        Image(
-            str(produto_png),
-            width=GRAPH_WIDTH,
-            height=GRAPH_HEIGHT
-        )
-    )
-
-    elements.append(
-        Paragraph(
-            f"""
-            O produto
-            {top_produto['Código do Produto']}
-            apresentou a maior contribuição financeira
-            do período.
-            """,
-            styles["BodyText"]
-        )
-    )
-
-    elements.append(
-        Spacer(1, 10)
-    )
-
-
-    elements.append(
         Paragraph(
             """
             Os produtos abaixo representam a maior
@@ -592,6 +449,16 @@ def generate_executive_pdf(
             é estratégico para manutenção da rentabilidade.
             """,
             styles["BodyText"]
+        )
+    )
+
+    elements.append(Spacer(1, 15))
+
+    elements.append(
+        Image(
+            str(produto_png),
+            width=GRAPH_WIDTH,
+            height=GRAPH_HEIGHT
         )
     )
 
@@ -629,13 +496,15 @@ def generate_executive_pdf(
         Paragraph(
             f"""
             <b>Insight Executivo</b><br/><br/>
-
-            Os 10 produtos mais relevantes representam
+            • O produto
+            {top_produto['Código do Produto']}
+            apresentou a maior contribuição financeira
+            do período.<br/>
+            • Os 10 produtos mais relevantes representam
             <b>{participacao_top10:.1f}%</b>
             do faturamento analisado.
-
             Isso demonstra o grau de concentração
-            da receita no portfólio atual.
+            da receita no portfólio atual.<br/>
             """,
             styles["BodyText"]
         )
@@ -679,7 +548,22 @@ def generate_executive_pdf(
         )
     )
 
-    elements.append(Spacer(1, 10))
+    elements.append(
+            Paragraph(
+                f"""
+                <b>Desempenho Comercial</b><br/><br/>
+                {top_rep['Representante']}
+                lidera o faturamento com
+                {brl(top_rep['Receita_Total'])},
+                representando
+                {top_rep['Participacao (%)']:.1f}%
+                da receita total.
+                """,
+                styles["BodyText"]
+            )
+        )
+
+    elements.append(Spacer(1, 30))
 
     elements.append(
         Image(
@@ -699,7 +583,6 @@ def generate_executive_pdf(
     ]]
 
     for _, row in rep.iterrows():
-
         dados.append([
             str(row["Representante"]),
             brl(row["Receita_Total"]),
@@ -721,60 +604,102 @@ def generate_executive_pdf(
 
     elements.append(tabela)
 
-    elements.append(
-        Paragraph(
-            f"""
-            <b>Desempenho Comercial</b><br/><br/>
-
-            {top_rep['Representante']}
-            lidera o faturamento com
-            {brl(top_rep['Receita_Total'])},
-            representando
-            {top_rep['Participacao (%)']:.1f}%
-            da receita total.
-            """,
-            styles["BodyText"]
-        )
-    )
-
-
-    elements.append(PageBreak())
-
-    elements.append(
-        Paragraph(
-            "Mensagem Executiva",
-            styles["Heading1"]
-        )
-    )
-
-    elements.append(
-        Paragraph(
-            f"""
-            O período apresentou faturamento de
-            <b>{brl(financial['revenue_total'])}</b>,
-            com margem média de
-            <b>{financial['gross_margin_avg']:.2f}%</b>.
-
-            Os resultados indicam estabilidade operacional
-            e reforçam a importância dos produtos líderes
-            e dos principais representantes comerciais para
-            a composição da receita.
-            """,
-            styles["BodyText"]
-        )
-    )
-
 
     # ==================================================
     # CONCLUSÕES EXECUTIVAS
     # ==================================================
     elements.append(PageBreak())
+    top5_concentracao = (
+        product_summary
+        .head(5)["Faturamento"]
+        .sum()
+        /
+        product_summary["Faturamento"].sum()
+        * 100
+    )
+
+    if top5_concentracao >= 70:
+        risco_portfolio = (
+            f"""
+            Existe um nível elevado de concentração
+            de receita.
+
+            Os cinco principais produtos representam
+            {top5_concentracao:.1f}% do faturamento
+            total analisado.
+
+            A companhia apresenta forte dependência
+            desse grupo de produtos.
+            """
+        )
+    elif top5_concentracao >= 50:
+        risco_portfolio = (
+            f"""
+            Existe uma concentração moderada de receita.
+
+            Os cinco principais produtos representam
+            {top5_concentracao:.1f}% do faturamento.
+
+            Recomenda-se monitorar o comportamento
+            desses produtos para evitar aumento da
+            dependência comercial.
+            """
+        )
+    else:
+        risco_portfolio = (
+            f"""
+            O faturamento apresenta boa distribuição
+            entre os produtos comercializados.
+
+            Os cinco principais produtos representam
+            {top5_concentracao:.1f}% do faturamento.
+
+            O risco de concentração atualmente é baixo.
+            """
+        )
+    
+    elements.append(
+            Paragraph(
+                "Conclusões Executivas",
+                styles["Heading1"]
+            )
+        )
+
+    insights = [
+        f"<b>Produto mais rentável:</b> {financial['top_product']}",
+        f"<b>Representante com maior resultado:</b> {financial['top_representative']}",
+        f"<b>Cliente com maior contribuição:</b> {financial['top_customer']}",
+    ]
+
+    for item in insights:
+        elements.append(
+            Paragraph(
+                f"• {item}",
+                styles["BodyText"]
+            )
+        )
+
+    elements.append(Spacer(1, 15))
+
     elements.append(
         Paragraph(
-            "Conclusões Executivas",
-            styles["Heading1"]
+            "Recomendações:",
+            styles["Heading2"]
         )
     )
+
+    elements.append(
+        Paragraph(
+            """
+            • Monitorar produtos líderes.<br/>
+            • Expandir regiões com maior ticket médio.<br/>
+            • Priorizar retenção dos clientes mais rentáveis.<br/>
+            """,
+            styles["BodyText"]
+        )
+    )
+
+    elements.append(Spacer(1, 35))
 
     elements.append(
         Paragraph(
@@ -812,57 +737,15 @@ def generate_executive_pdf(
         )
     )
 
-    elements.append(Spacer(1, 20))
-
-    insights = [
-        f"<b>Produto mais rentável:</b> {financial['top_product']}",
-        f"<b>Representante com maior resultado:</b> {financial['top_representative']}",
-        f"<b>Cliente com maior contribuição:</b> {financial['top_customer']}",
-    ]
-
-    for item in insights:
-
-        elements.append(
-            Paragraph(
-                f"• {item}",
-                styles["BodyText"]
-            )
-        )
-
-    elements.append(
-        Spacer(1, 15)
-    )
-
-    elements.append(
-        Paragraph(
-            "Recomendações:",
-            styles["Heading2"]
-        )
-    )
-
-    elements.append(
-        Paragraph(
-            """
-            • Monitorar produtos líderes.<br/>
-            • Expandir regiões com maior ticket médio.<br/>
-            • Priorizar retenção dos clientes mais rentáveis.<br/>
-            """,
-            styles["BodyText"]
-        )
-    )
-
 
     # ==================================================
     # GEOGRAFIA
     # ==================================================
     elements.append(PageBreak())
-    state_revenue = SalesAnalytics.get_state_revenue(
-        filtered_df
-    )
-
-    state_geo = SalesAnalytics.get_state_geo_coordinates(
-        filtered_df
-    )
+    geo = SalesAnalytics.get_state_ticket_average(filtered_df)
+    top_estado = geo.iloc[0]
+    state_revenue = SalesAnalytics.get_state_revenue(filtered_df)
+    state_geo = SalesAnalytics.get_state_geo_coordinates(filtered_df)
 
     if not state_revenue.empty:
         fig = px.bar(
@@ -896,7 +779,8 @@ def generate_executive_pdf(
             hover_name="UF",
             scope="south america",
             projection="mercator",  # natural earth, mercator
-            color_continuous_scale="Blues"
+            color_continuous_scale="Blues",
+            title="Vendas por região"
         )
         fig_map.update_geos(
             fitbounds="locations",
@@ -927,13 +811,6 @@ def generate_executive_pdf(
             width=1600,
             height=900
         )
-
-
-    geo = SalesAnalytics.get_state_ticket_average(
-        filtered_df
-    )
-
-    elements.append(PageBreak())
 
     elements.append(
         Paragraph(
@@ -1007,10 +884,6 @@ def generate_executive_pdf(
         ])
     )
 
-    elements.append(tabela)
-
-    elements.append(Spacer(1, 15))
-    top_estado = geo.iloc[0]
     elements.append(
         Paragraph(
             f"""
@@ -1027,12 +900,17 @@ def generate_executive_pdf(
         )
     )
 
+    elements.append(Spacer(1, 15))
+
+    elements.append(tabela)
+
+
     # ==================================================
     # IMPRESSÃO DO RELATÓRIO
     # ==================================================
     doc.build(
         elements,
-        onFirstPage=add_page_number,
+        onFirstPage=add_cover_footer,
         onLaterPages=add_page_number
     )
 

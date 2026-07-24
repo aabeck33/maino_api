@@ -34,9 +34,15 @@ __pycache__/
 # =================================
 # Arquivos Excel gerados
 # =================================
-
 work/*.xlsx
 work/*.xls
 
 # Manter a pasta work no repositório
 !work/.gitkeep
+
+# =================================
+# Arquivos PDF e PNG gerados
+# =================================
+*.png
+utils/pdf_assets/*.pdf
+!logo.png
