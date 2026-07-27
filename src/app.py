@@ -23,6 +23,7 @@ from dashboard.views import (
     render_overview,
     render_products,
     render_orders,
+    render_customers,
     render_geography,
     render_fiscal,
     render_insights,
@@ -230,6 +231,7 @@ def main():
         "📈 Visão Geral", 
         "💰 Rentabilidade",
         "👥 Representantes de Vendas",
+        "👥 Clientes",
         "📦 Produtos", 
         "🛒 Pedidos", 
         "🌍 Geo", 
@@ -247,20 +249,23 @@ def main():
     with tabs[2]:
         render_representatives(filtered_df, IS_DARK)
 
-    with tabs[3]:
+    with tabs[4]:
         render_products(filtered_df, IS_DARK)
 
-    with tabs[4]:
+    with tabs[5]:
         render_orders(filtered_df, IS_DARK)
 
-    with tabs[5]:
+    with tabs[6]:
         render_geography(filtered_df, IS_DARK)
 
-    with tabs[6]:
+    with tabs[7]:
         render_fiscal(filtered_df, IS_DARK)
 
-    with tabs[7]:
+    with tabs[8]:
         render_insights(filtered_df, kpis)
+    
+    with tabs[3]:
+        render_customers(filtered_df)
 
 if __name__ == "__main__":
     main()

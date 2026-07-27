@@ -40,7 +40,7 @@ def render_overview(df: pd.DataFrame, kpis: Dict[str, Any]) -> None:
     st.markdown("### Resumo Executivo")
     
     # KPI Grid - Row 1
-    c1, c2, c3 = st.columns(3)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
         metric_card(
             label="Total de Pedidos",
@@ -62,31 +62,45 @@ def render_overview(df: pd.DataFrame, kpis: Dict[str, Any]) -> None:
             delta="Portfólio Ativo",
             delta_type="up"
         )
+    with c4:
+        metric_card(
+            "Clientes Ativos",
+            f"{kpis['active_customers']:,}",
+            delta="Clientes com Pedidos",
+            delta_type="warn" if kpis['active_customers'] < 450 else "up"
+        )
         
     st.markdown("<div style='margin: 1rem 0;'></div>", unsafe_allow_html=True)
     
     # KPI Grid - Row 2
-    c4, c5, c6 = st.columns(3)
-    with c4:
+    c5, c6, c7, c8 = st.columns(4)
+    with c5:
         metric_card(
             label="Pedidos com Nota Fiscal",
             value=f"{kpis['orders_with_nf']:,}",
             delta="Emitidas com Sucesso",
             delta_type="up"
         )
-    with c5:
+    with c6:
         metric_card(
             label="Pedidos sem Nota Fiscal",
             value=f"{kpis['orders_without_nf']:,}",
             delta="Aguardando Emissão",
             delta_type="warn" if kpis['orders_without_nf'] > 0 else "up"
         )
-    with c6:
+    with c7:
         metric_card(
             label="Taxa de Emissão de NF",
             value=f"{kpis['nf_emission_rate']:.2f}%",
             delta="Cobertura Fiscal",
             delta_type="up" if kpis['nf_emission_rate'] > 80 else "warn"
+        )
+    with c8:
+        metric_card(
+            label="Pedidos por Cliente",
+            value=f"{kpis['orders_per_customer']:.2f}",
+            delta="Média Geral",
+            delta_type="up"
         )
 
     st.markdown("<div style='margin: 1.5rem 0;'></div>", unsafe_allow_html=True)
@@ -118,6 +132,83 @@ def render_overview(df: pd.DataFrame, kpis: Dict[str, Any]) -> None:
             </div>
             """, unsafe_allow_html=True)
 
+def render_customers(df: pd.DataFrame):
+    st.markdown("### 👥 Clientes")
+    customer_summary = (SalesAnalytics.get_customer_summary(df))
+    if customer_summary.empty:
+        st.info("Nenhum cliente encontrado.")
+        return
+
+    # ==================================
+    # KPIs
+    # ==================================
+    active_customers = (
+        customer_summary[
+            "Cliente_Chave"
+        ].nunique()
+    )
+
+    total_orders = (
+        customer_summary[
+            "Pedidos"
+        ].sum()
+    )
+
+    orders_per_customer = (
+        total_orders
+        / active_customers
+        if active_customers > 0
+        else 0
+    )
+
+    c1, c2 = st.columns(2)
+    with c1:
+        metric_card(
+            "Clientes Ativos",
+            f"{active_customers:,}"
+        )
+    with c2:
+        metric_card(
+            "Pedidos por Cliente",
+            f"{orders_per_customer:.2f}"
+        )
+
+    # ==================================
+    # GRÁFICO TOP 10
+    # ==================================
+    st.markdown("#### Top 10 Clientes por Quantidade de Pedidos")
+    fig = px.bar(
+        customer_summary.head(10),
+        x="Cliente_Chave",
+        y="Pedidos",
+        color="Pedidos",
+        color_continuous_scale="Blues"
+    )
+
+    fig.update_layout(
+        xaxis_title="Cliente",
+        yaxis_title="Pedidos",
+        height=450
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True
+    )
+
+    # ==================================
+    # TABELA
+    # ==================================
+    st.markdown("#### Base de Clientes")
+    custom_table(
+        customer_summary,
+        columns_mapping={
+            "Cliente_Chave": "Cliente",
+            "Pedidos": "Pedidos",
+            "Receita_Total": "Receita Total",
+            "Ticket Médio": "Ticket Médio"
+        }
+    )
 
 def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, is_dark: bool) -> None:
     """Renders the financial profitability dashboard section."""

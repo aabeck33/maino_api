@@ -66,7 +66,6 @@ class SalesAnalytics:
         """Builds a usable customer identifier from the available columns."""
         if df.empty:
             return pd.Series(dtype="object")
-
         if "Cliente" in df.columns:
             values = df["Cliente"]
         elif "Nome do Cliente" in df.columns:
@@ -187,16 +186,19 @@ class SalesAnalytics:
 
         # Invoice stats are calculated on unique orders to represent real fiscal volume
         df_unique_orders = df.drop_duplicates(subset=["Pedido ID"])
+        active_customers = (df["CPF/CNPJ do Cliente"].astype(str).str.strip().replace(["", "N/A", "nan", "None"], pd.NA).dropna().nunique())
         normalized_status = df_unique_orders["Status da Nota Fiscal"].apply(SalesAnalytics._normalize_status)
         orders_without_nf = df_unique_orders[normalized_status.isin(["NAO_TRANSMITIDA", "NAO EMITIDA"])]["Pedido ID"].count()
         orders_with_nf = total_orders - orders_without_nf
-
+        orders_per_customer = (total_orders / active_customers if active_customers > 0 else 0.0)
         nf_emission_rate = (orders_with_nf / total_orders * 100) if total_orders > 0 else 0.0
 
         return {
             "total_orders": total_orders,
+            "active_customers": active_customers,
             "total_products": unique_products, # Total products (distinct count)
             "total_qty_sold": total_qty_sold,
+            "orders_per_customer": orders_per_customer,
             "unique_products": unique_products,
             "orders_with_nf": orders_with_nf,
             "orders_without_nf": orders_without_nf,
@@ -216,6 +218,42 @@ class SalesAnalytics:
             return float(os.getenv("CUSTO_VARIAVEL_IMPORTADO", "0.2015"))
 
         return float(os.getenv("CUSTO_VARIAVEL_NACIONAL", "0.2615"))
+
+    @staticmethod
+    def get_customer_summary(df: pd.DataFrame) -> pd.DataFrame:
+        if df.empty:
+            return pd.DataFrame()
+        customer_df = df.copy()
+        customer_key = SalesAnalytics._coerce_customer_key(customer_df)
+        customer_df["Cliente_Chave"] = customer_key
+        summary = (
+            customer_df.groupby(
+                "Cliente_Chave",
+                dropna=False,
+                as_index=False
+            )
+            .agg(
+                Pedidos=("Pedido ID", "nunique"),
+                Receita_Total=("Valor Total", "sum")
+            )
+        )
+        summary["Ticket Médio"] = summary.apply(
+            lambda row: (
+                row["Receita_Total"] / row["Pedidos"]
+                if row["Pedidos"] > 0
+                else 0.0
+            ),
+            axis=1
+        )
+        return (
+            summary
+            .sort_values(
+                "Pedidos",
+                ascending=False
+            )
+            .reset_index(drop=True)
+        )
+
 
     def build_profitability_dataset(self, df: pd.DataFrame) -> pd.DataFrame:
         """Builds a profitability dataset by joining sales rows to the product catalog."""
@@ -594,7 +632,7 @@ class SalesAnalytics:
             Valor_Total=("Valor Total", "first"),
             Status_da_Nota_Fiscal=("Status da Nota Fiscal", "first"),
             Representante=("Representante", "first"),
-            Cliente_Chave=("Cliente_Chave", "first")
+            Cliente_Chave=("Cliente_Chave", "first"),
         )
         summary["Valor_Total"] = pd.to_numeric(summary["Valor_Total"], errors="coerce").fillna(0.0)
         return summary
@@ -616,7 +654,7 @@ class SalesAnalytics:
     @staticmethod
     def _client_identifier(df: pd.DataFrame) -> pd.Series:
         if "CPF/CNPJ do Cliente" in df.columns and df["CPF/CNPJ do Cliente"].astype(str).str.strip().replace({"": pd.NA}).notna().any():
-            return df["CPF/CNPJ do Cliente"].astype(str).str.strip().replace({"": "N/A"})
+            return df["CPF/CNPJ do Cliente"].astype(str).str.strip().replace({"": "N/A"}).fillna("N/A")
         return df["Cliente"].astype(str)
 
     @staticmethod

@@ -347,6 +347,8 @@ def generate_executive_pdf(analytics, filtered_df, output_path="relatorio_gerenc
         ["Faturamento Total", brl(financial["revenue_total"])],
         ["Margem de Contribuição", brl(financial["gross_profit_total"])],
         ["Margem Média", f'{financial["gross_margin_avg"]:.2f}%'],
+        ["Clientes Ativos", f"{kpis['active_customers']:,}"],
+        ["Pedidos por Cliente", f"{kpis['orders_per_customer']:.2f}"],
         ["Total de Pedidos", f'{kpis["total_orders"]:,}'],
         ["Produtos únicos", f'{kpis["unique_products"]:,}'],
         ["Taxa NF", f'{kpis["nf_emission_rate"]:.2f}%'],
@@ -545,6 +547,119 @@ def generate_executive_pdf(analytics, filtered_df, output_path="relatorio_gerenc
             styles["BodyText"]
         )
     )
+
+
+    # ==================================================
+    # CLIENTES
+    # ==================================================
+    customer_summary = (SalesAnalytics.get_customer_summary(filtered_df))
+    customer_summary = customer_summary[customer_summary["Pedidos"] > 3].copy()
+
+    customer_png = (
+        images_dir /
+        "clientes_top10.png"
+    )
+    if not customer_summary.empty:
+        fig_customer = px.bar(
+            customer_summary.head(10),
+            x="Cliente_Chave",
+            y="Pedidos",
+            color="Pedidos",
+            color_continuous_scale="Blues",
+            title="Top 10 Clientes por Quantidade de Pedidos"
+        )
+        fig_customer.update_layout(
+            xaxis_title="Cliente",
+            yaxis_title="Pedidos",
+            height=600
+        )
+        fig_customer.write_image(
+            str(customer_png),
+            width=GRAPH_WIDTH,
+            height=GRAPH_HEIGHT
+        )
+
+        elements.append(PageBreak())
+
+    elements.append(
+        Paragraph(
+            "Clientes",
+            styles["Heading1"]
+        )
+    )
+
+    elements.append(
+        Paragraph(
+            """
+            Análise dos clientes com maior recorrência
+            de compras no período selecionado.
+            Apenas clientes com mais de 3 pedidos
+            foram considerados nesta análise.
+            """,
+            styles["BodyText"]
+        )
+    )
+
+    elements.append(Spacer(1, 15))
+
+    if not customer_summary.empty:
+        elements.append(
+            Image(
+                str(customer_png),
+                width=520,
+                height=320
+            )
+        )
+        elements.append(Spacer(1, 15))
+    
+    dados = [[
+        "Cliente",
+        "Pedidos",
+        "Receita",
+        "Ticket Médio"
+    ]]
+
+    for _, row in customer_summary.head(20).iterrows():
+        dados.append([
+            str(row["Cliente_Chave"]),
+            int(row["Pedidos"]),
+            brl(row["Receita_Total"]),
+            brl(row["Ticket Médio"])
+        ])
+
+    tabela_clientes = Table(
+        dados,
+        colWidths=[170, 70, 120, 120]
+    )
+
+    tabela_clientes.setStyle(
+        TableStyle([
+            ("BACKGROUND",(0,0),(-1,0),
+            colors.HexColor("#1E3A8A")),
+
+            ("TEXTCOLOR",(0,0),(-1,0),
+            colors.white),
+
+            ("FONTNAME",(0,0),(-1,0),
+            "Helvetica-Bold"),
+
+            ("BOX",(0,0),(-1,-1),
+            1, colors.HexColor("#1E3A8A")),
+
+            ("INNERGRID",(0,0),(-1,-1),
+            0.5, colors.HexColor("#CBD5E1")),
+
+            ("ROWBACKGROUNDS",
+            (0,1),(-1,-1),
+            [
+                colors.HexColor("#F8FAFC"),
+                colors.white
+            ])
+        ])
+    )
+
+    elements.append(tabela_clientes)
+
 
     # ==================================================
     # REPRESENTANTES
