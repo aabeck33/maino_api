@@ -552,6 +552,7 @@ def generate_executive_pdf(analytics, filtered_df, output_path="relatorio_gerenc
     # ==================================================
     # CLIENTES
     # ==================================================
+    elements.append(PageBreak())
     customer_summary = (SalesAnalytics.get_customer_summary(filtered_df))
     customer_summary = customer_summary[customer_summary["Pedidos"] > 3].copy()
 
@@ -564,6 +565,7 @@ def generate_executive_pdf(analytics, filtered_df, output_path="relatorio_gerenc
             customer_summary.head(10),
             x="Cliente_Chave",
             y="Pedidos",
+            #orientation="h",
             color="Pedidos",
             color_continuous_scale="Blues",
             title="Top 10 Clientes por Quantidade de Pedidos"
@@ -571,15 +573,18 @@ def generate_executive_pdf(analytics, filtered_df, output_path="relatorio_gerenc
         fig_customer.update_layout(
             xaxis_title="Cliente",
             yaxis_title="Pedidos",
-            height=600
+            margin=dict(
+                l=40,
+                r=20,
+                t=60,
+                b=180
+            )
         )
         fig_customer.write_image(
             str(customer_png),
-            width=GRAPH_WIDTH,
-            height=GRAPH_HEIGHT
+            width=1200,
+            height=700
         )
-
-        elements.append(PageBreak())
 
     elements.append(
         Paragraph(
@@ -606,8 +611,8 @@ def generate_executive_pdf(analytics, filtered_df, output_path="relatorio_gerenc
         elements.append(
             Image(
                 str(customer_png),
-                width=520,
-                height=320
+                width=GRAPH_WIDTH,
+                height=GRAPH_HEIGHT
             )
         )
         elements.append(Spacer(1, 15))
@@ -634,23 +639,29 @@ def generate_executive_pdf(analytics, filtered_df, output_path="relatorio_gerenc
 
     tabela_clientes.setStyle(
         TableStyle([
-            ("BACKGROUND",(0,0),(-1,0),
+
+            ("BACKGROUND", (0, 0), (-1, 0),
             colors.HexColor("#1E3A8A")),
 
-            ("TEXTCOLOR",(0,0),(-1,0),
+            ("TEXTCOLOR", (0, 0), (-1, 0),
             colors.white),
 
-            ("FONTNAME",(0,0),(-1,0),
+            ("FONTNAME", (0, 0), (-1, 0),
             "Helvetica-Bold"),
 
-            ("BOX",(0,0),(-1,-1),
-            1, colors.HexColor("#1E3A8A")),
+            ("FONTSIZE", (0, 0), (-1, -1), 8),
 
-            ("INNERGRID",(0,0),(-1,-1),
-            0.5, colors.HexColor("#CBD5E1")),
+            ("LEADING", (0, 0), (-1, -1), 10),
 
-            ("ROWBACKGROUNDS",
-            (0,1),(-1,-1),
+            ("TOPPADDING", (0, 0), (-1, -1), 4),
+
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+
+            ("BOX", (0, 0), (-1, -1), 1, colors.HexColor("#1E3A8A")),
+
+            ("INNERGRID", (0, 0), (-1, -1), 0.5, colors.HexColor("#CBD5E1")),
+
+            ("ROWBACKGROUNDS", (0, 1), (-1, -1),
             [
                 colors.HexColor("#F8FAFC"),
                 colors.white
