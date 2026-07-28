@@ -1,6 +1,62 @@
-from __future__ import annotations
-
 from typing import Any, Iterable, Optional, Tuple
+import ctypes
+import io
+import os
+from pathlib import Path
+
+
+def read_excel_shared(fpath: Path | str) -> io.BytesIO:
+    """
+    Reads an Excel file using low-level Windows sharing flags (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+    to prevent PermissionError crashes if the file is currently open in Microsoft Excel.
+    """
+    path_str = str(Path(fpath).resolve())
+    if not os.path.exists(path_str):
+        raise FileNotFoundError(f"Arquivo não encontrado: {path_str}")
+
+    if os.name != "nt":
+        with open(path_str, "rb") as f:
+            return io.BytesIO(f.read())
+
+    GENERIC_READ = 0x80000000
+    FILE_SHARE_READ = 1
+    FILE_SHARE_WRITE = 2
+    FILE_SHARE_DELETE = 4
+    OPEN_EXISTING = 3
+    FILE_ATTRIBUTE_NORMAL = 0x80
+    INVALID_HANDLE_VALUE = -1
+
+    handle = ctypes.windll.kernel32.CreateFileW(
+        path_str,
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        None,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        None
+    )
+    if handle == INVALID_HANDLE_VALUE:
+        with open(path_str, "rb") as f:
+            return io.BytesIO(f.read())
+
+    buf = bytearray()
+    chunk_size = 65536
+    chunk = ctypes.create_string_buffer(chunk_size)
+    bytes_read = ctypes.c_ulong(0)
+
+    try:
+        while True:
+            res = ctypes.windll.kernel32.ReadFile(
+                handle, chunk, chunk_size, ctypes.byref(bytes_read), None
+            )
+            if not res or bytes_read.value == 0:
+                break
+            buf.extend(chunk.raw[:bytes_read.value])
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
+
+    return io.BytesIO(buf)
+
 
 # These ranges are approximate Brazilian CEP groups used to infer state (UF) from postal code.
 # They rely on the first three digits of the CEP and are intended for native, offline mapping.
@@ -117,6 +173,27 @@ def safe_float(value: Any) -> float:
         return 0.0
 
 
+def extract_uf_from_string(text: Any) -> str:
+    """
+    Extracts a Brazilian State (UF) two-letter abbreviation from a string,
+    e.g., 'OURO CAR LTDA (SC)' -> 'SC'. Returns 'N/A' if not found.
+    """
+    if not text or not isinstance(text, str):
+        return "N/A"
+    
+    import re
+    match = re.search(r"\((AC|AL|AM|AP|BA|CE|DF|ES|GO|MA|MG|MS|MT|PA|PB|PE|PI|PR|RJ|RN|RO|RR|RS|SC|SE|TO|SP)\)", text, re.IGNORECASE)
+    if match:
+        return match.group(1).upper()
+
+    # Try trailing pattern like ' - SC' or ' SC'
+    match_end = re.search(r"[\s\-\,\/]+(AC|AL|AM|AP|BA|CE|DF|ES|GO|MA|MG|MS|MT|PA|PB|PE|PI|PR|RJ|RN|RO|RR|RS|SC|SE|TO|SP)$", text, re.IGNORECASE)
+    if match_end:
+        return match_end.group(1).upper()
+
+    return "N/A"
+
+
 def find_value_by_keys(obj: Any, keys: Iterable[str]) -> Optional[Any]:
     if obj is None:
         return None
@@ -138,3 +215,4 @@ def find_value_by_keys(obj: Any, keys: Iterable[str]) -> Optional[Any]:
                 return found
 
     return None
+

@@ -14,13 +14,13 @@ import unicodedata
 import pandas as pd
 from dotenv import load_dotenv
 
-from utils.geo import BRAZIL_STATE_CENTROIDS, map_cep_to_uf
+from utils.geo import BRAZIL_STATE_CENTROIDS, map_cep_to_uf, read_excel_shared
 from utils.logger import setup_logger
 
 logger = setup_logger("maino_analytics")
 load_dotenv()
 
-MIN_PED_TICKET_MEDIO = 4
+MIN_PED_TICKET_MEDIO = int(os.getenv("MIN_PED_TICKET_MEDIO", "1"))
 LUCRO_OPERACIONAL_CUSTO_FIXO = float(os.getenv("LUCRO_OPERACIONAL_CUSTO_FIXO","25"))
 
 class SalesAnalytics:
@@ -36,7 +36,7 @@ class SalesAnalytics:
     @classmethod
     def load_products_catalog(cls, products_excel_path: Optional[Path] = None) -> pd.DataFrame:
         """Loads the product catalog from the Excel workbook in the work folder."""
-        default_path = Path(__file__).resolve().parent.parent / "work" / "produtos.xlsx"
+        default_path = Path(__file__).resolve().parents[2] / "work" / "produtos.xlsx"
         path = Path(products_excel_path) if products_excel_path else default_path
 
         if not path.exists():
@@ -44,7 +44,8 @@ class SalesAnalytics:
             return pd.DataFrame(columns=["Código", "PU de entrada", "PU de saída"])
 
         try:
-            df = pd.read_excel(path, engine="openpyxl")
+            bio = read_excel_shared(path)
+            df = pd.read_excel(bio, engine="openpyxl")
         except Exception as exc:  # pragma: no cover - defensive logging
             logger.error("Erro ao carregar catálogo de produtos em %s: %s", path, exc)
             return pd.DataFrame(columns=["Código", "PU de entrada", "PU de saída"])
@@ -72,6 +73,8 @@ class SalesAnalytics:
             values = df["Nome do Cliente"]
         elif "CPF/CNPJ do Cliente" in df.columns:
             values = df["CPF/CNPJ do Cliente"]
+        elif "Pedido ID" in df.columns:
+            values = df["Pedido ID"]
         else:
             values = pd.Series(["N/A"] * len(df), index=df.index)
 
@@ -83,12 +86,14 @@ class SalesAnalytics:
             raise FileNotFoundError(f"Planilha de vendas não encontrada no caminho: {self.excel_path}")
 
         try:
-            df = pd.read_excel(self.excel_path, engine="openpyxl")
+            bio = read_excel_shared(self.excel_path)
+            df = pd.read_excel(bio, engine="openpyxl")
         except PermissionError:
             raise PermissionError(
                 f"O arquivo '{self.excel_path.name}' está sendo usado por outro programa "
                 f"(ex: Excel aberto). Feche o arquivo e tente novamente."
             )
+
 
         # Ensure correct datatypes
         df["Quantidade"] = pd.to_numeric(df["Quantidade"], errors="coerce").fillna(0.0)
@@ -100,6 +105,18 @@ class SalesAnalytics:
         df["CEP"] = df["CEP"].astype(str).str.strip()
         df["Representante"] = df["Representante"].astype(str).str.strip()
 
+        # =====================================================
+        # Conversão de códigos antigos para códigos novos
+        # =====================================================
+        product_mapping = self.load_product_code_mapping()
+        logger.info(
+            "Conversões carregadas: %s",
+            len(product_mapping)
+        )
+        df["Código do Produto"] = (
+            df["Código do Produto"]
+            .map(lambda x: product_mapping.get(str(x).strip(), str(x).strip()))
+        )
         return df
 
     @staticmethod
@@ -186,7 +203,8 @@ class SalesAnalytics:
 
         # Invoice stats are calculated on unique orders to represent real fiscal volume
         df_unique_orders = df.drop_duplicates(subset=["Pedido ID"])
-        active_customers = (df["CPF/CNPJ do Cliente"].astype(str).str.strip().replace(["", "N/A", "nan", "None"], pd.NA).dropna().nunique())
+        customer_series = SalesAnalytics._coerce_customer_key(df)
+        active_customers = customer_series.replace(["", "N/A", "nan", "None", "<NA>"], pd.NA).dropna().nunique()
         normalized_status = df_unique_orders["Status da Nota Fiscal"].apply(SalesAnalytics._normalize_status)
         orders_without_nf = df_unique_orders[normalized_status.isin(["NAO_TRANSMITIDA", "NAO EMITIDA"])]["Pedido ID"].count()
         orders_with_nf = total_orders - orders_without_nf
@@ -320,6 +338,7 @@ class SalesAnalytics:
             profitability["Faturamento"] * profitability["Custo Variável (%)"]
         )
         profitability["Margem de contribuição"] = profitability["Faturamento"] - profitability["Custo Total"]
+        profitability["Lucro Bruto"] = profitability["Margem de contribuição"]
         profitability["Margem Bruta (%)"] = pd.Series(0.0, index=profitability.index)
         non_zero = profitability["Faturamento"] > 0
         profitability.loc[non_zero, "Margem Bruta (%)"] = (profitability.loc[non_zero, "Margem de contribuição"] / profitability.loc[non_zero, "Faturamento"] * 100)
@@ -600,7 +619,7 @@ class SalesAnalytics:
             normalized["Valor Total"] = 0.0
 
         normalized["UF"] = normalized["UF"].astype(str).str.strip().str.upper().replace({"": "N/A", "NONE": "N/A", "N/A": "N/A"})
-        normalized["Cidade"] = normalized["Cidade"].astype(str).str.strip().str.upper().replace({"": "N/A", "None": "N/A", "nan": "N/A"})
+        normalized["Cidade"] = normalized["Cidade"].astype(str).str.strip().replace({"": "N/A", "None": "N/A", "nan": "N/A"})
         normalized.loc[normalized["Cidade"] == "", "Cidade"] = "N/A"
         normalized["Valor Total"] = pd.to_numeric(normalized["Valor Total"], errors="coerce").fillna(0.0)
 
@@ -653,9 +672,7 @@ class SalesAnalytics:
 
     @staticmethod
     def _client_identifier(df: pd.DataFrame) -> pd.Series:
-        if "CPF/CNPJ do Cliente" in df.columns and df["CPF/CNPJ do Cliente"].astype(str).str.strip().replace({"": pd.NA}).notna().any():
-            return df["CPF/CNPJ do Cliente"].astype(str).str.strip().replace({"": "N/A"}).fillna("N/A")
-        return df["Cliente"].astype(str)
+        return SalesAnalytics._coerce_customer_key(df)
 
     @staticmethod
     def _ensure_representante_column(df: pd.DataFrame) -> pd.DataFrame:
@@ -682,42 +699,29 @@ class SalesAnalytics:
         if df is None or df.empty:
             return pd.DataFrame()
 
-        df = SalesAnalytics._ensure_representante_column(df)
-        df = df.copy()
-        if "Valor Total" in df.columns:
-            df["Valor Total"] = pd.to_numeric(df["Valor Total"], errors="coerce").fillna(0.0)
-        else:
-            df["Valor Total"] = 0.0
-        df["Cliente_Chave"] = SalesAnalytics._client_identifier(df)
-
-        '''order_levels = (
-            df.groupby(["Pedido ID", "Representante"], dropna=False, as_index=False)
-            .agg(
-                Valor_Total=("Valor Total", "first"),
-                Cliente_Chave=("Cliente_Chave", "first"),
-                Código_do_Produto=("Código do Produto", lambda values: values.nunique()),
-            )
-        )
+        df_reps = SalesAnalytics._ensure_representante_column(df)
+        orders = SalesAnalytics._build_order_summary(df_reps)
+        if orders.empty or "Representante" not in orders.columns:
+            return pd.DataFrame()
 
         summary = (
-            order_levels.groupby("Representante", dropna=False, as_index=False)
+            orders.groupby("Representante", dropna=False, as_index=False)
             .agg(
                 Receita_Total=("Valor_Total", "sum"),
-                Pedidos=("Pedido ID", "count"),
-                Clientes_Unicos=("Cliente_Chave", lambda values: values.nunique()),
-                Produtos_Distintos=("Código_do_Produto", "sum"),
-            )
-        )'''
-
-        summary = (
-            df.groupby("Representante", dropna=False, as_index=False)
-            .agg(
-                Receita_Total=("Valor Total", "sum"),
                 Pedidos=("Pedido ID", "nunique"),
                 Clientes_Unicos=("Cliente_Chave", "nunique"),
-                Produtos_Distintos=("Código do Produto", "nunique"),
             )
         )
+
+        if "Código do Produto" in df_reps.columns:
+            prod_dist = (
+                df_reps.groupby("Representante", dropna=False)["Código do Produto"]
+                .nunique()
+                .reset_index(name="Produtos_Distintos")
+            )
+            summary = summary.merge(prod_dist, on="Representante", how="left")
+        else:
+            summary["Produtos_Distintos"] = 0
 
         summary["Ticket_Medio"] = summary.apply(
             lambda row: row["Receita_Total"] / row["Pedidos"] if row["Pedidos"] > 0 else 0.0,
@@ -764,26 +768,50 @@ class SalesAnalytics:
     @staticmethod
     def get_representative_monthly_evolution(df: pd.DataFrame) -> pd.DataFrame:
         date_col = SalesAnalytics._find_date_column(df)
+
         if df is None or df.empty or date_col is None:
             return pd.DataFrame()
 
         df = SalesAnalytics._ensure_representante_column(df)
         df = df.copy()
+
         df[date_col] = pd.to_datetime(df[date_col], errors="coerce")
         df = df[df[date_col].notna()]
+
         if df.empty:
             return pd.DataFrame()
 
+        # cria mês
         df["Mes"] = df[date_col].dt.to_period("M").dt.to_timestamp()
-        orders = SalesAnalytics._build_order_summary(df)
-        if orders.empty or "Representante" not in orders.columns:
-            return pd.DataFrame()
+
+        # resume por pedido preservando o mês
+        orders = (
+            df.groupby(
+                ["Pedido ID", "Número do Pedido"],
+                dropna=False,
+                as_index=False
+            )
+            .agg(
+                Representante=("Representante", "first"),
+                Mes=("Mes", "first"),
+                Valor_Total=("Valor Total", "first")
+            )
+        )
 
         result = (
-            orders.groupby(["Representante", "Mes"], dropna=False, as_index=False)
-            .agg(Receita_Total=("Valor_Total", "sum"))
-            .sort_values(["Representante", "Mes"])
+            orders.groupby(
+                ["Representante", "Mes"],
+                dropna=False,
+                as_index=False
+            )
+            .agg(
+                Receita_Total=("Valor_Total", "sum")
+            )
+            .sort_values(
+                ["Representante", "Mes"]
+            )
         )
+
         return result
 
     @staticmethod
@@ -848,6 +876,45 @@ class SalesAnalytics:
             Pedidos=("Pedido ID", "nunique")
         )
         return result.sort_values("Valor_Total", ascending=False)
+
+    @staticmethod
+    def load_product_code_mapping() -> dict:
+        """
+        Carrega a tabela de conversão de códigos antigos -> códigos novos.
+        """
+
+        mapping_file = (
+            Path(__file__).resolve().parents[2]
+            / "work"
+            / "vendas - All Drive - Histórico Gerensys.xlsx"
+        )
+
+        try:
+            df_codes = pd.read_excel(
+                mapping_file,
+                sheet_name="Códigos",
+                engine="openpyxl"
+            )
+
+            # Ajuste os nomes das colunas conforme estão na planilha
+            old_col = "Código Gerensys"
+            new_col = "Código Maino"
+
+            mapping = dict(
+                zip(
+                    df_codes[old_col].astype(str).str.strip(),
+                    df_codes[new_col].astype(str).str.strip()
+                )
+            )
+
+            return mapping
+
+        except Exception as exc:
+            logger.error(
+                "Erro carregando conversão de códigos: %s",
+                exc
+            )
+            return {}
 
     @staticmethod
     def get_state_ticket_average(df: pd.DataFrame) -> pd.DataFrame:

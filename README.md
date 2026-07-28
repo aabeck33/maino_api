@@ -1,196 +1,139 @@
-# Maino API Integration — Business Intelligence Suite
+# Maino Business Intelligence & Extrator de Vendas Excel
 
-Este projeto oferece duas soluções complementares sobre os dados da plataforma ERP Mainô:
+Este projeto oferece uma solução completa para consolidação, inteligência de negócios e análise de KPIs sobre dados de vendas da empresa **All Drive Transmission**, integrando relatórios do ERP Mainô e históricos migrados do sistema Gerensys.
 
-1. **Extrator de Pedidos** — consulta a API do Mainô e gera uma planilha Excel com os pedidos de venda, cliente e dados fiscais.
-2. **Dashboard Executivo** — lê as planilhas geradas e exibe um painel interativo de inteligência de negócios para apresentação à diretoria, incluindo indicadores financeiros, rentabilidade, ranking de produtos e análise por representante/cliente.
+## 🚀 Funcionalidades Principais
 
-O dashboard inclui análises geográficas por estado e cidade, usando centroídes de UF e inferência de UF por CEP sem dependência de APIs externas.
+1. **Extrator e Consolidador de Vendas (`src/export_orders.py`)**:
+   - Lê os arquivos de vendas da All Drive do ERP Mainô (`vendas - All Drive - Maino*.xlsx`).
+   - Lê o catálogo de produtos (`produtos.xlsx`).
+   - Lê arquivos de histórico do sistema antigo (`*Histórico Gerensys*.xlsx`).
+   - Mapeia códigos de produtos do sistema Gerensys para os novos códigos do Mainô utilizando a aba `Códigos`.
+   - Filtra movimentações desconsiderando `Entrada de Mercadoria` e processando `Nota Fiscal 55` e `Pedido de Venda`.
+   - Trata regras fiscais (como desconsiderar valores de vendas com `Confirmado (sem faturamento)`).
+   - Extrai localização e UF do cliente a partir de CEP ou sufixo da Razão Social/Cliente.
+   - Trata concorrência de leitura em arquivos abertos no Microsoft Excel usando abertura compartilhada no Windows.
+   - Gera a planilha unificada em `work/pedidos_confirmados.xlsx`.
+
+2. **Dashboard Executivo Streamlit (`src/app.py`)**:
+   - Painel interativo de BI com suporte a modo claro ☀️ e escuro 🌙.
+   - Abas dedicadas: Visão Geral, Rentabilidade, Representantes, Clientes, Produtos, Pedidos, Análise Geográfica, Conformidade Fiscal e Insights Gerenciais.
+   - Filtros globais dinâmicos por status de Nota Fiscal, código de produto, representante, UF, cliente e intervalo de datas.
+   - Geração automática das planilhas `work/indicadores_financeiros.xlsx` e `work/indicadores_financeiros_resumo.xlsx`.
+   - Botão para exportação e download de relatórios executivos em formato PDF (`ReportLab`).
 
 ---
 
-## Por que Streamlit + Plotly?
-
-| Critério | Escolha |
-|---|---|
-| **Linguagem única** | Python puro — sem frontend separado |
-| **Velocidade de desenvolvimento** | Interface pronta em poucas horas |
-| **Interatividade nativa** | Filtros, tabs, exportação e tema sem JavaScript |
-| **Qualidade gráfica** | Plotly oferece gráficos corporativos com hover e zoom |
-| **Distribuição interna** | Basta executar `streamlit run src/app.py` |
-| **Manutenção** | Qualquer membro da equipe que saiba Python pode alterar facilmente |
-
----
-
-## Estrutura do Projeto
+## 📁 Estrutura do Projeto
 
 ```text
 Maino_API/
 ├── src/
-│   ├── app.py                        # Entrypoint do Dashboard Executivo
+│   ├── app.py                        # Entrypoint do Dashboard Executivo Streamlit
+│   ├── export_orders.py              # Consolidador e Extrator de Vendas Excel
+│   ├── export_ncms.py                # Extrator de NCMs (utilitário)
 │   ├── analytics/
-│   │   └── processing.py             # Cálculo de KPIs, ABC, Pareto, estatísticas e geografia
+│   │   └── processing.py             # Motor de cálculo de KPIs, Rentabilidade, ABC/Pareto e Geografia
 │   ├── dashboard/
-│   │   ├── components.py             # CSS, cards KPI, tabelas HTML e cabeçalho
-│   │   └── views.py                  # Renderização de cada aba do dashboard
-│   ├── utils/
-│   │   ├── geo.py                    # Helpers de CEP, mapeamento UF e normalização numérica
-│   │   └── logger.py                 # Logging centralizado
-│   ├── export_ncms.py                # Extrator de NCMs (script legado)
-│   └── export_orders.py              # Extrator de Pedidos de Venda e geração de Excel
+│   │   ├── components.py             # CSS, cards KPI, temas e cabeçalho
+│   │   └── views.py                  # Componentes visuais das abas do dashboard
+│   └── utils/
+│       ├── geo.py                    # Leitura compartilhada de Excel, inferência de UF e parser de CEP
+│       ├── logger.py                 # Logging centralizado
+│       └── pdf_report.py             # Gerador de relatórios gerenciais em PDF
 │
 ├── tests/
 │   ├── test_analytics.py             # Testes unitários do módulo de analytics
-│   └── test_export_orders.py         # Testes unitários do extrator
+│   └── test_export_orders.py         # Testes unitários do extrator de vendas
 │
 ├── work/
-│   ├── ncms_export.xlsx              # Resultado do extrator de NCMs
-│   ├── pedidos_confirmados.xlsx      # Planilha de entrada do dashboard
-│   └── produtos.xlsx                 # Catálogo de produtos com preço e origem
+│   ├── vendas - All Drive - Maino.xlsx         # Fonte de dados Mainô
+│   ├── produtos.xlsx                           # Catálogo de produtos com custos e origem
+│   ├── vendas - All Drive - Histórico Gerensys.xlsx # Histórico de vendas Gerensys
+│   ├── pedidos_confirmados.xlsx                # Resultado consolidado do extrator
+│   ├── indicadores_financeiros.xlsx            # Base detalhada de rentabilidade
+│   └── indicadores_financeiros_resumo.xlsx     # Resumo financeiro por produto, representante e cliente
 │
-├── .env.example                      # Modelo de variáveis de ambiente
-├── requirements.txt                  # Dependências Python
+├── .env.example
+├── requirements.txt
 └── README.md
 ```
 
 ---
 
-## Instalação
+## 🛠️ Instalação
 
 ### 1. Criar e ativar o ambiente virtual
 
+**Windows (PowerShell)**:
 ```powershell
-# Windows (PowerShell)
-python -m venv venv
-.\venv\Scripts\Activate.ps1
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
 ```
 
+**Linux / macOS**:
 ```bash
-# Linux / macOS
-python3 -m venv venv
-source venv/bin/activate
+python3 -m venv .venv
+source .venv/bin/activate
 ```
 
-### 2. Instalar dependências
+### 2. Instalar as dependências
 
 ```bash
 pip install -r requirements.txt
 ```
 
-### 3. Configurar variáveis de ambiente
-
-```bash
-# Copiar o arquivo de exemplo
-cp .env.example .env
-```
-
-Edite `.env` e preencha:
-
-```env
-MAINO_API_TOKEN=seu_token_jwt_aqui
-MAINO_ORDER_STATUS=Pedido gerado
-NOME_PADRAO_REPRESENTANTE=
-CUSTO_VARIAVEL_IMPORTADO=0.2015
-CUSTO_VARIAVEL_NACIONAL=0.2615
-```
-
-Além do token e do status dos pedidos, o dashboard usa as porcentagens de custo variável para calcular a margem de contribuição. Os percentuais são lidos a partir do `.env` e aplicados conforme a origem do produto no catálogo.
-
 ---
 
-## Catálogo de Produtos
+## 💻 Execução
 
-O dashboard lê o arquivo [work/produtos.xlsx](work/produtos.xlsx) como catálogo de produtos. Esse arquivo deve conter, no mínimo, as colunas:
+### Step 1: Extração e Consolidação dos Dados
 
-- `Código`
-- `Descrição`
-- `PU de entrada`
-- `PU de saída`
-- `Origem`
-
-A coluna `Origem` define a regra de custo variável utilizada no cálculo financeiro. Produtos com origem estrangeira e adquiridos no mercado interno são tratados como nacionais para fins de margem de contribuição.
-
----
-
-## Execução
-
-### Extração de Pedidos (gera a planilha de entrada)
+Execute o extrator para ler todas as planilhas de entrada em `work/` e gerar `work/pedidos_confirmados.xlsx`:
 
 ```bash
 python src/export_orders.py
 ```
 
-A planilha será salva em `work/pedidos_confirmados.xlsx`.
+### Step 2: Dashboard Executivo Streamlit
 
-### Dashboard Executivo
+Para iniciar o painel interativo:
 
 ```bash
 streamlit run src/app.py
 ```
 
-Acesse no navegador: **http://localhost:8501**
+Acesse no navegador em: **http://localhost:8501**
 
-O painel gera automaticamente arquivos de resultado em [work](work), incluindo:
-- [work/indicadores_financeiros.xlsx](work/indicadores_financeiros.xlsx) com a base detalhada de rentabilidade
-- [work/indicadores_financeiros_resumo.xlsx](work/indicadores_financeiros_resumo.xlsx) com resumos por produto, representante e cliente
+---
 
-Os indicadores financeiros agora consideram o custo variável e a origem do produto para montar os cálculos de faturamento, custo total, lucro bruto e margem de contribuição.
+## 📋 Estrutura da Planilha Gerada (`work/pedidos_confirmados.xlsx`)
 
-### Extração de NCMs (script legado)
+Cada linha da planilha representa um item de pedido/venda consolidado. As 6 primeiras colunas seguem rigorosamente a ordem exigida:
+
+1. `Pedido ID`
+2. `Número do Pedido`
+3. `Código do Produto`
+4. `Quantidade`
+5. `ID da Nota Fiscal`
+6. `Status da Nota Fiscal`
+7. `Status do Pedido`
+8. `Data do Pedido`
+9. `URL NFe`
+10. `CPF/CNPJ do Cliente`
+11. `Nome do Cliente`
+12. `CEP`
+13. `UF`
+14. `Cidade`
+15. `Valor Total`
+16. `Representante`
+
+---
+
+## 🧪 Execução de Testes Unitários
+
+Para rodar todos os testes automatizados da aplicação:
 
 ```bash
-python src/export_ncms.py
+python -m unittest discover tests -v
 ```
-
----
-
-## Dashboard — Abas e Funcionalidades
-
-| Aba | Conteúdo |
-|---|---|
-| 📈 **Visão Geral** | KPIs de pedidos, volume, produtos únicos, compliance fiscal e top 5 produtos |
-| � **Rentabilidade** | Faturamento, lucro bruto, margem bruta, ranking de produtos e curvas ABC financeiras |
-| 👥 **Representantes de Vendas** | Performance comercial por representante, receita, clientes, recompra e evolução temporal |
-| �📦 **Produtos** | Ranking de produtos, Gráfico de Pareto e Curva ABC |
-| 🛒 **Pedidos** | Estatísticas de pedido, histograma, boxplot e ranking dos maiores pedidos |
-| 🌍 **Geo** | Receita por estado, clientes por estado, ticket médio, top cidades e mapa de calor regional |
-| ⚖️ **Fiscal** | Gauge de emissão de NF, distribuição por status e indicadores de compliance |
-| 💡 **Insights Gerenciais** | Narrativas automáticas sobre concentração de receita e performance fiscal |
-
-### Filtros Globais (barra lateral)
-
-- **Status da Nota Fiscal**: Todos / Com NF Emitida / Sem NF Emitida
-- **Pesquisa por Produto**: Filtra por código do produto em tempo real
-- **Exportar para Excel**: Baixa os dados filtrados
-- **Tema**: Alterna entre modo claro ☀️ e modo escuro 🌙
-
----
-
-## Testes
-
-```bash
-# Testes do módulo de analytics
-python -m unittest tests/test_analytics.py -v
-
-# Testes do extrator de pedidos
-python -m unittest tests/test_export_orders.py -v
-```
-
----
-
-## Colunas da Planilha de Entrada
-
-| Coluna | Descrição |
-|---|---|
-| `Pedido ID` | UUID único do pedido |
-| `Número do Pedido` | Número sequencial do pedido |
-| `Status do Pedido` | `Pedido gerado`, `Orçamento gerado`, etc. |
-| `Código do Produto` | Código do SKU comercializado |
-| `Quantidade` | Quantidade de unidades do item |
-| `ID da Nota Fiscal` | UUID da NF-e ou `N/A` |
-| `Status da Nota Fiscal` | `ACEITA`, `Não emitida`, etc. |
-| `URL NFe` | URL para visualização da DANFE |
-| `CEP` | CEP do cliente usado para geografia e inferência de UF |
-| `UF` | Unidade federativa do cliente |
-| `Cidade` | Município ou cidade do cliente |
-| `Valor Total` | Total do pedido somando todas as parcelas de cobrança |

@@ -193,7 +193,7 @@ def render_customers(df: pd.DataFrame):
 
     st.plotly_chart(
         fig,
-        use_container_width=True
+        width="stretch"
     )
 
     # ==================================
@@ -280,7 +280,7 @@ def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, i
         fig_monthly.update_layout(get_plot_layout(is_dark))
         fig_monthly.update_yaxes(title_text="R$", secondary_y=False)
         fig_monthly.update_yaxes(title_text="Margem (%)", secondary_y=True)
-        st.plotly_chart(fig_monthly, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_monthly, width="stretch", config={"displayModeBar": False})
     else:
         st.info("Não há dados suficientes para montar a evolução mensal.")
     chart_container_end()
@@ -295,7 +295,7 @@ def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, i
         fig_compare.update_layout(get_plot_layout(is_dark))
         fig_compare.update_yaxes(title_text="R$", secondary_y=False)
         fig_compare.update_yaxes(title_text="Lucro (R$)", secondary_y=True)
-        st.plotly_chart(fig_compare, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_compare, width="stretch", config={"displayModeBar": False})
     chart_container_end()
 
     st.markdown("#### Rankings Financeiros")
@@ -316,7 +316,7 @@ def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, i
                 text_auto=",.0f"
             )
             fig_profit.update_layout(get_plot_layout(is_dark))
-            st.plotly_chart(fig_profit, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_profit, width="stretch", config={"displayModeBar": False})
         chart_container_end()
 
     with col2:
@@ -335,7 +335,7 @@ def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, i
                 text_auto=",.0f"
             )
             fig_revenue.update_layout(get_plot_layout(is_dark))
-            st.plotly_chart(fig_revenue, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_revenue, width="stretch", config={"displayModeBar": False})
         chart_container_end()
 
     st.markdown("#### Curvas ABC Financeiras")
@@ -352,7 +352,7 @@ def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, i
                 color_discrete_map={"A": "#2563eb", "B": "#f59e0b", "C": "#16a34a"}
             )
             fig_abc_rev.update_layout(get_plot_layout(is_dark))
-            st.plotly_chart(fig_abc_rev, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_abc_rev, width="stretch", config={"displayModeBar": False})
         chart_container_end()
 
     with col_abc_profit:
@@ -367,7 +367,7 @@ def render_profitability(raw_df: pd.DataFrame, profitability_df: pd.DataFrame, i
                 color_discrete_map={"A": "#2563eb", "B": "#f59e0b", "C": "#16a34a"}
             )
             fig_abc_profit.update_layout(get_plot_layout(is_dark))
-            st.plotly_chart(fig_abc_profit, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_abc_profit, width="stretch", config={"displayModeBar": False})
         chart_container_end()
 
     st.markdown("#### Tabelas de Análise")
@@ -437,7 +437,7 @@ def render_representatives(df: pd.DataFrame, is_dark: bool) -> None:
     )
     fig_rank.update_traces(texttemplate="R$ %{x:,.0f}", textposition="outside")
     fig_rank.update_layout(get_plot_layout(is_dark), margin=dict(l=120, r=40, t=30, b=40), yaxis=dict(autorange="reversed"))
-    st.plotly_chart(fig_rank, use_container_width=True, config={"displayModeBar": False})
+    st.plotly_chart(fig_rank, width="stretch", config={"displayModeBar": False})
     chart_container_end()
 
     # Summary table
@@ -487,7 +487,7 @@ def render_representatives(df: pd.DataFrame, is_dark: bool) -> None:
             labels={"Mes": "Mês", "Receita_Total": "Receita (R$)"}
         )
         fig_evo.update_layout(get_plot_layout(is_dark), margin=dict(l=40, r=40, t=30, b=40))
-        st.plotly_chart(fig_evo, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_evo, width="stretch", config={"displayModeBar": False})
     else:
         st.info("Não foi possível gerar a evolução mensal porque não há coluna de data reconhecida no conjunto de dados.")
     chart_container_end()
@@ -518,7 +518,7 @@ def render_products(df: pd.DataFrame, is_dark: bool) -> None:
         )
         fig_top.update_layout(get_plot_layout(is_dark))
         fig_top.update_layout(margin=dict(l=100, r=40, t=10, b=40))
-        st.plotly_chart(fig_top, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_top, width="stretch", config={"displayModeBar": False})
     chart_container_end()
     
     # 2. Pareto Chart
@@ -556,7 +556,7 @@ def render_products(df: pd.DataFrame, is_dark: bool) -> None:
         fig_pareto.update_yaxes(title_text="Percentual Acumulado (%)", range=[0, 105], secondary_y=True)
         fig_pareto.update_xaxes(title_text="Produtos")
         
-        st.plotly_chart(fig_pareto, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_pareto, width="stretch", config={"displayModeBar": False})
         chart_container_end()
         
     # 3. ABC Curve Classification
@@ -586,7 +586,7 @@ def render_products(df: pd.DataFrame, is_dark: bool) -> None:
             labels={"Qtd Produtos": "Quantidade de SKU", "Classe": "Classe ABC"}
         )
         fig_abc.update_layout(get_plot_layout(is_dark))
-        st.plotly_chart(fig_abc, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_abc, width="stretch", config={"displayModeBar": False})
         chart_container_end()
         
     with col_abc_table:
@@ -634,7 +634,7 @@ def render_orders(df: pd.DataFrame, is_dark: bool) -> None:
                 color_discrete_sequence=["#2563eb"]
             )
             fig_hist.update_layout(get_plot_layout(is_dark))
-            st.plotly_chart(fig_hist, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_hist, width="stretch", config={"displayModeBar": False})
         chart_container_end()
         
     with col_box:
@@ -647,7 +647,7 @@ def render_orders(df: pd.DataFrame, is_dark: bool) -> None:
                 color_discrete_sequence=["#d97706"]
             )
             fig_box.update_layout(get_plot_layout(is_dark))
-            st.plotly_chart(fig_box, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_box, width="stretch", config={"displayModeBar": False})
         chart_container_end()
         
     # Largest Orders List
@@ -709,7 +709,7 @@ def render_geography(df: pd.DataFrame, is_dark: bool) -> None:
         )
         fig_state_rev.update_layout(get_plot_layout(is_dark))
         fig_state_rev.update_yaxes(tickformat=",.0f")
-        st.plotly_chart(fig_state_rev, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_state_rev, width="stretch", config={"displayModeBar": False})
     else:
         st.info("Não há dados de faturamento por estado disponíveis.")
     chart_container_end()
@@ -729,7 +729,7 @@ def render_geography(df: pd.DataFrame, is_dark: bool) -> None:
             color_continuous_scale="Viridis"
         )
         fig_clients.update_layout(get_plot_layout(is_dark))
-        st.plotly_chart(fig_clients, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_clients, width="stretch", config={"displayModeBar": False})
         custom_table(
             df_clients_pct[["UF", "Clientes", "Participação Clientes (%)"]].sort_values("Clientes", ascending=False),
             columns_mapping={"UF": "UF", "Clientes": "Clientes Compradores", "Participação Clientes (%)": "% Participação"}
@@ -751,7 +751,7 @@ def render_geography(df: pd.DataFrame, is_dark: bool) -> None:
             color_continuous_scale="Cividis"
         )
         fig_ticket.update_layout(get_plot_layout(is_dark))
-        st.plotly_chart(fig_ticket, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_ticket, width="stretch", config={"displayModeBar": False})
         custom_table(
             state_ticket[["UF", "Pedidos", "Clientes", "Valor_Total", "Ticket Médio", "Participação Clientes (%)", "Participação Receita (%)"]].rename(
                 columns={
@@ -785,7 +785,7 @@ def render_geography(df: pd.DataFrame, is_dark: bool) -> None:
             text_auto=",.0f"
         )
         fig_top_city_rev.update_layout(get_plot_layout(is_dark))
-        st.plotly_chart(fig_top_city_rev, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_top_city_rev, width="stretch", config={"displayModeBar": False})
     chart_container_end()
 
     chart_container("Top 10 Cidades por Clientes", "As cidades com maior base de compradores")
@@ -801,7 +801,7 @@ def render_geography(df: pd.DataFrame, is_dark: bool) -> None:
             text_auto=True
         )
         fig_top_city_cust.update_layout(get_plot_layout(is_dark))
-        st.plotly_chart(fig_top_city_cust, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_top_city_cust, width="stretch", config={"displayModeBar": False})
     chart_container_end()
 
     chart_container("Mapa de Calor Geográfico por Estado", "Visualização de concentração regional de receita")
@@ -840,7 +840,7 @@ def render_geography(df: pd.DataFrame, is_dark: bool) -> None:
             lonaxis=dict(range=[-75, -30]),
         )
         fig_map.update_layout(get_plot_layout(is_dark))
-        st.plotly_chart(fig_map, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_map, width="stretch", config={"displayModeBar": False})
     else:
         st.info("O mapa geográfico não pôde ser gerado porque não há coordenadas válidas para os estados.")
     chart_container_end()
@@ -855,7 +855,7 @@ def render_geography(df: pd.DataFrame, is_dark: bool) -> None:
             color_discrete_sequence=px.colors.sequential.Plasma
         )
         fig_state_share.update_layout(get_plot_layout(is_dark))
-        st.plotly_chart(fig_state_share, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_state_share, width="stretch", config={"displayModeBar": False})
     chart_container_end()
 
     st.markdown("<div style='margin: 1.25rem 0;'></div>", unsafe_allow_html=True)
@@ -918,7 +918,7 @@ def render_fiscal(df: pd.DataFrame, is_dark: bool) -> None:
         # Apply standard layout styling
         fig_gauge.update_layout(get_plot_layout(is_dark))
         fig_gauge.update_layout(height=260, margin=dict(l=30, r=30, t=40, b=10))
-        st.plotly_chart(fig_gauge, use_container_width=True, config={"displayModeBar": False})
+        st.plotly_chart(fig_gauge, width="stretch", config={"displayModeBar": False})
         chart_container_end()
         
     with col_donut:
@@ -935,7 +935,7 @@ def render_fiscal(df: pd.DataFrame, is_dark: bool) -> None:
                 color_discrete_map={"ACEITA": "#16a34a", "Não emitida": "#ef4444", "DENEGADA": "#f59e0b", "REJEITADA": "#dc2626"}
             )
             fig_donut.update_layout(get_plot_layout(is_dark))
-            st.plotly_chart(fig_donut, use_container_width=True, config={"displayModeBar": False})
+            st.plotly_chart(fig_donut, width="stretch", config={"displayModeBar": False})
         chart_container_end()
 
 

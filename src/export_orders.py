@@ -1,19 +1,33 @@
+"""
+Módulo Extrator e Consolidador de Vendas a partir de fontes de dados Excel.
+Lê os arquivos de vendas da All Drive (Mainô e Histórico Gerensys), mapeia códigos
+de produtos, normaliza dados fiscais e geográficos, e gera a planilha 'work/pedidos_confirmados.xlsx'.
+
+Compatível com Python 3.11+.
+"""
+
+import ctypes
+import io
 import logging
 import os
+import re
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
-from urllib.parse import parse_qs, urlparse
 
-import requests
-from requests.adapters import HTTPAdapter
-from urllib3.util import Retry
+import pandas as pd
 from openpyxl import Workbook
 from dotenv import load_dotenv
 
-from utils.geo import find_value_by_keys, map_cep_to_uf, normalize_cep, safe_float
+# Ensure import paths work regardless of execution location
+ROOT_DIR = Path(__file__).resolve().parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
 
-# Set up logging configuration
+from utils.geo import extract_uf_from_string, map_cep_to_uf, normalize_cep, safe_float
+
+# Logging configuration
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(levelname)s - %(message)s",
@@ -21,248 +35,316 @@ logging.basicConfig(
 )
 logger = logging.getLogger("export_orders")
 
-# Substitua este valor pelo token JWT do seu ERP Mainô.
-YOUR_SECRET_TOKEN = "W_BvamRnXFPaaXaDsmxQSdE5Ak29etiQKjnozOrq3nw"
-
-# Carrega variáveis do arquivo .env antes do uso
 load_dotenv()
-ORDER_STATUS_FILTER = os.getenv("MAINO_ORDER_STATUS", "Pedido gerado")
 
-API_BASE_URL = "https://api.maino.com.br/api/v2"
-OUTPUT_FILE = Path(__file__).resolve().parent.parent / "work" / "pedidos_confirmados.xlsx"
+WORK_DIR = Path(__file__).resolve().parent.parent / "work"
+OUTPUT_FILE = WORK_DIR / "pedidos_confirmados.xlsx"
+DEFAULT_REPRESENTATIVE = os.getenv("NOME_PADRAO_REPRESENTANTE", "Leonardo")
 
 
-def create_session() -> requests.Session:
-    """Creates a requests session configured with retries for resilience."""
-    session = requests.Session()
-    retry = Retry(
-        total=5,
-        backoff_factor=1,
-        status_forcelist=(429, 500, 502, 503, 504),
-        allowed_methods=("GET",),
+def read_excel_shared(fpath: Path | str) -> io.BytesIO:
+    """
+    Reads an Excel file using low-level Windows sharing flags (FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE)
+    to prevent PermissionError crashes if the file is currently open in Microsoft Excel.
+    """
+    path_str = str(Path(fpath).resolve())
+    if not os.path.exists(path_str):
+        raise FileNotFoundError(f"Arquivo não encontrado: {path_str}")
+
+    if os.name != "nt":
+        # Non-Windows systems fall back to standard open
+        with open(path_str, "rb") as f:
+            return io.BytesIO(f.read())
+
+    GENERIC_READ = 0x80000000
+    FILE_SHARE_READ = 1
+    FILE_SHARE_WRITE = 2
+    FILE_SHARE_DELETE = 4
+    OPEN_EXISTING = 3
+    FILE_ATTRIBUTE_NORMAL = 0x80
+    INVALID_HANDLE_VALUE = -1
+
+    handle = ctypes.windll.kernel32.CreateFileW(
+        path_str,
+        GENERIC_READ,
+        FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+        None,
+        OPEN_EXISTING,
+        FILE_ATTRIBUTE_NORMAL,
+        None
     )
-    adapter = HTTPAdapter(max_retries=retry)
-    session.mount("https://", adapter)
-    session.mount("http://", adapter)
-    return session
+    if handle == INVALID_HANDLE_VALUE:
+        err = ctypes.GetLastError()
+        # Fallback to standard open if CreateFileW fails for any reason
+        with open(path_str, "rb") as f:
+            return io.BytesIO(f.read())
 
+    buf = bytearray()
+    chunk_size = 65536
+    chunk = ctypes.create_string_buffer(chunk_size)
+    bytes_read = ctypes.c_ulong(0)
 
-def extract_next_page_number(value: Any) -> Optional[int]:
-    """Parses page number from pagination next_page string or returns integer value."""
-    if value is None:
-        return None
-
-    if isinstance(value, int):
-        return value
-
-    if isinstance(value, str):
-        stripped = value.strip()
-        if stripped.isdigit():
-            return int(stripped)
-
-        parsed = urlparse(stripped)
-        query = parse_qs(parsed.query)
-        page_values = query.get("page") or query.get("page[]")
-        if page_values:
-            try:
-                return int(page_values[0])
-            except ValueError:
-                return None
-
-    return None
-
-
-def fetch_invoice(session: requests.Session, order_id: str, token: str) -> Dict[str, str]:
-    """
-    Fetches the invoice details corresponding to a sales order.
-    Returns a dict with 'id' and 'status'.
-    If the invoice does not exist or gets a 404, returns 'N/A' and 'Não emitida'.
-    """
-    url = f"{API_BASE_URL}/pedidos/{order_id}/nota_fiscal"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-    }
     try:
-        logger.debug(f"Buscando nota fiscal para o pedido {order_id}...")
-        response = session.get(url, headers=headers, timeout=(10, 30))
-        
-        # 404 explicitly indicates the invoice does not exist/was not found for this order
-        if response.status_code == 404:
-            return {
-                "id": "N/A",
-                "status": "Não emitida",
-                "danfe_url": "N/A",
-            }
-        response.raise_for_status()
-        
-        data = response.json()
-        nf = data.get("nota_fiscal")
-        if not nf or not isinstance(nf, dict):
-            return {
-                "id": "N/A",
-                "status": "Não emitida",
-                "danfe_url": "N/A",
-            }
+        while True:
+            res = ctypes.windll.kernel32.ReadFile(
+                handle, chunk, chunk_size, ctypes.byref(bytes_read), None
+            )
+            if not res or bytes_read.value == 0:
+                break
+            buf.extend(chunk.raw[:bytes_read.value])
+    finally:
+        ctypes.windll.kernel32.CloseHandle(handle)
 
-        return {
-            "id": nf.get("id") or "N/A",
-            "status": nf.get("status") or "Não emitida",
-            "danfe_url": nf.get("danfe_url") or "N/A",
-        }
-    except requests.exceptions.HTTPError as e:
-        if e.response is not None and e.response.status_code == 404:
-            return {
-                "id": "N/A",
-                "status": "Não emitida",
-                "danfe_url": "N/A",
-            }
-        logger.error(f"Erro HTTP ao buscar nota fiscal do pedido {order_id}: {e}")
-        raise
-    except Exception as e:
-        logger.error(f"Erro inesperado ao buscar nota fiscal do pedido {order_id}: {e}")
-        raise
+    return io.BytesIO(buf)
 
 
-def compute_order_total_from_parcels(order: Dict[str, Any]) -> float:
-    """Sums the parcel values defined under order['cobranca']['parcelas']."""
-    cobranca = order.get("cobranca") or {}
-    parcelas = cobranca.get("parcelas") or []
-    total = 0.0
-
-    if isinstance(parcelas, list):
-        for parcela in parcelas:
-            total += safe_float(find_value_by_keys(parcela, ["valor", "valor_parcela", "amount"]))
-
-    return total
-
-
-def fetch_orders_page(session: requests.Session, page: int, token: str, status: str) -> Dict[str, Any]:
-    """Fetches a page of sales orders with a given status."""
-    url = f"{API_BASE_URL}/pedidos"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/json",
-    }
-    params = {
-        #"status": status, # Esse filtro nãoestá funcionando nem mesmo no prórprio sistema.
-        "page": page,
-        "per_page": 100,  # Maximize entries per page to minimize API roundtrips
-    }
-    response = session.get(url, headers=headers, params=params, timeout=(10, 60))
-    response.raise_for_status()
-    return response.json()
-
-
-def process_orders_and_invoices(session: requests.Session, token: str, status: str) -> List[Dict[str, Any]]:
-    """Pages through the Maino API to fetch all orders with status matching `status` and their invoices."""
-    page = 1
+def load_maino_sales_files(work_dir: Path) -> List[Dict[str, Any]]:
+    """
+    Extracts sales order items from Mainô Excel files matching 'vendas - All Drive - Maino*.xlsx'.
+    """
+    pattern = re.compile(r"^vendas\s*-\s*All Drive\s*-\s*Maino.*\.xlsx$", re.IGNORECASE)
+    matching_files = [f for f in os.listdir(work_dir) if pattern.match(f)]
+    
     extracted_rows: List[Dict[str, Any]] = []
 
-    while True:
-        logger.info(f"Buscando página {page} de pedidos com status '{status}'...")
+    if not matching_files:
+        logger.warning(f"Nenhum arquivo 'vendas - All Drive - Maino*.xlsx' encontrado em {work_dir}.")
+        return extracted_rows
+
+    for fname in sorted(matching_files):
+        fpath = work_dir / fname
+        logger.info(f"Processando arquivo Mainô: {fname}...")
         try:
-            data = fetch_orders_page(session, page, token, status)
-        except Exception as e:
-            logger.error(f"Falha na comunicação com a API ao obter pedidos da página {page}: {e}")
-            raise
+            bio = read_excel_shared(fpath)
+            xl = pd.ExcelFile(bio)
 
-        orders = data.get("pedidos") or []
-        if not orders:
-            logger.info("Nenhum pedido retornado nesta página. Finalizando busca.")
-            break
-
-        logger.info(f"Processando {len(orders)} pedidos na página {page}...")
-        for order in orders:
-            # We also check status client-side (case-insensitively) to guarantee we only extract the target status
-            order_status = order.get("status") or ""
-            if order_status.lower() != status.lower():
-                logger.warning(
-                    f"Ignorando pedido {order.get('id')} com status {order_status} (esperado: {status})."
-                )
+            if "Relatório de Pedidos" not in xl.sheet_names or "Relatório de Produtos" not in xl.sheet_names:
+                logger.warning(f"Abas requeridas não encontradas em {fname}. Abas disponíveis: {xl.sheet_names}")
                 continue
 
-            order_id = order.get("id")
-            order_number = order.get("numero")
-            order_status = order.get("status")
-            order_cep = normalize_cep(
-                order.get("cep")
-                or find_value_by_keys(order.get("cliente") or {}, ["cep"])
-                or ""
-            )
-            order_city = str(
-                find_value_by_keys(order.get("cliente") or {}, ["municipio", "municipio_ibge"])
-                or ""
-            ).strip() or "N/A"
-            order_doc = str(
-                find_value_by_keys(order.get("cliente") or {}, ["documento", "cpf", "cnpj"])
-                or ""
-            ).strip() or "N/A"
-            order_cli = str(
-                find_value_by_keys(order.get("cliente") or {}, ["nome_fantasia", "razao_social"])
-                or ""
-            ).strip() or "N/A"
-            order_representative = find_value_by_keys(order.get("representante") or {}, ["nome", "name"]) or "N/A"
-            order_date = order.get("data") or "N/A"
-            items = order.get("itens") or []
+            df_pedidos = pd.read_excel(xl, sheet_name="Relatório de Pedidos")
+            df_produtos = pd.read_excel(xl, sheet_name="Relatório de Produtos")
 
-            # If order has no items, we skip or add a row with empty items?
-            # The prompt says: "Cada linha da planilha deve representar um item do pedido"
-            if not items:
-                logger.info(f"Pedido {order_number} (ID: {order_id}) não possui itens. Pulando.")
+            if df_pedidos.empty or df_produtos.empty:
+                logger.warning(f"Planilha {fname} possui abas vazias. Pulando.")
                 continue
 
-            # Fetch invoice details
-            try:
-                invoice_info = fetch_invoice(session, order_id, token)
-            except Exception as e:
-                logger.error(f"Erro crítico ao recuperar nota fiscal para o pedido {order_id}: {e}")
-                # We raise or fallback? Since requirement says "Caso não exista... preencher N/A", but a communication error
-                # represents a failure to communicate, we raise to allow retry/recovery instead of silently outputting invalid data.
-                raise
+            # Ensure join column 'Número' is string
+            df_pedidos["Número"] = df_pedidos["Número"].astype(str).str.strip()
+            df_produtos["Número"] = df_produtos["Número"].astype(str).str.strip()
 
-            invoice_id = invoice_info.get("id", "N/A")
-            invoice_status = invoice_info.get("status", "Não emitida")
-            url_nfe = invoice_info.get("danfe_url", "N/A")
-            order_total = compute_order_total_from_parcels(order)
+            # Index pedidos by 'Número' for fast lookup
+            pedidos_dict = df_pedidos.set_index("Número").to_dict(orient="index")
 
-            effective_cep = order_cep or "N/A"
-            effective_uf = map_cep_to_uf(effective_cep)
+            for _, prod_row in df_produtos.iterrows():
+                num_ped = str(prod_row.get("Número", "")).strip()
+                ped_info = pedidos_dict.get(num_ped, {})
 
-            for item in items:
+                prod_code = str(prod_row.get("Codigo do Produto") or prod_row.get("Código do Produto") or "").strip().upper()
+                if not prod_code or prod_code in {"NAN", "NONE", ""}:
+                    continue
+
+                qty = safe_float(prod_row.get("Quantidade do Pedido") or prod_row.get("Quantidade"))
+                unit_price = safe_float(prod_row.get("Preço Unitário do Produto"))
+                total_price = safe_float(prod_row.get("Preço Total do Produto"))
+
+                if total_price == 0.0 and qty > 0 and unit_price > 0:
+                    total_price = qty * unit_price
+
+                status_fiscal = str(
+                    ped_info.get("Status fiscal") or prod_row.get("Status fiscal") or ""
+                ).strip()
+
+                # Fiscal values handling: 'Confirmado (sem faturamento)' -> desconsiderar valores
+                if "sem faturamento" in status_fiscal.lower():
+                    total_price = 0.0
+
+                nf_num = str(
+                    ped_info.get("Nota Fiscal") or prod_row.get("Nota Fiscal") or ""
+                ).strip()
+                if nf_num in {"nan", "None", ""}:
+                    nf_num = "N/A"
+
+                # Standardize Fiscal Status
+                if "aceita" in status_fiscal.lower():
+                    nf_status = "NF-e Aceita"
+                elif "rejeitada" in status_fiscal.lower():
+                    nf_status = "NF-e Rejeitada"
+                elif "gerada" in status_fiscal.lower():
+                    nf_status = "NF-e Gerada"
+                elif "digitação" in status_fiscal.lower() or "digitacao" in status_fiscal.lower():
+                    nf_status = "NAO EMITIDA"
+                elif nf_num != "N/A" and nf_num != "001/":
+                    nf_status = "NF-e Aceita"
+                elif "confirmado" in status_fiscal.lower():
+                    nf_status = "NF-e Aceita" if nf_num != "N/A" else "NAO EMITIDA"
+                else:
+                    nf_status = "NAO EMITIDA" if nf_num == "N/A" else "NF-e Aceita"
+
+                order_status = str(
+                    ped_info.get("Status do pedido") or prod_row.get("Status do pedido") or "Pedido gerado"
+                ).strip()
+
+                # Dates extraction: Data de Emissão > Data de Aprovação > Data
+                date_val = ped_info.get("Data de Emissão") or ped_info.get("Data de Aprovação") or ped_info.get("Data") or prod_row.get("Data")
+                parsed_date = pd.to_datetime(date_val, dayfirst=True, errors="coerce")
+                date_str = parsed_date.strftime("%Y-%m-%d") if pd.notna(parsed_date) else "N/A"
+
+                client_name = str(ped_info.get("Cliente") or prod_row.get("Cliente") or "N/A").strip()
+                uf = extract_uf_from_string(client_name)
+
+                rep = str(ped_info.get("Representante") or prod_row.get("Representante") or DEFAULT_REPRESENTATIVE).strip()
+                if not rep or rep in {"nan", "None", "N/A"}:
+                    rep = DEFAULT_REPRESENTATIVE
+
                 extracted_rows.append({
-                    "Pedido ID": order_id,
-                    "Número do Pedido": order_number,
+                    "Pedido ID": f"MAIN-{num_ped}",
+                    "Número do Pedido": num_ped,
+                    "Código do Produto": prod_code,
+                    "Quantidade": qty,
+                    "ID da Nota Fiscal": nf_num,
+                    "Status da Nota Fiscal": nf_status,
                     "Status do Pedido": order_status,
-                    "Data do Pedido": order_date,
-                    "Código do Produto": item.get("codigo"),
-                    "Quantidade": item.get("quantidade"),
-                    "ID da Nota Fiscal": invoice_id,
-                    "Status da Nota Fiscal": invoice_status,
-                    "URL NFe": url_nfe,
-                    "CPF/CNPJ do Cliente": order_doc,
-                    "Nome do Cliente": order_cli,
-                    "CEP": effective_cep,
-                    "UF": effective_uf,
-                    "Cidade": order_city,
-                    "Valor Total": order_total,
-                    "Representante": order_representative,
+                    "Data do Pedido": date_str,
+                    "URL NFe": "N/A",
+                    "CPF/CNPJ do Cliente": "N/A",
+                    "Nome do Cliente": client_name,
+                    "CEP": "N/A",
+                    "UF": uf,
+                    "Cidade": "N/A",
+                    "Valor Total": total_price,
+                    "Representante": rep,
                 })
 
-        pagination = data.get("pagination") or {}
-        next_page = extract_next_page_number(pagination.get("next_page"))
-        if next_page is None:
-            logger.info("Não há próxima página. Finalizando busca de pedidos.")
-            break
+        except Exception as e:
+            logger.error(f"Erro ao processar arquivo Mainô {fname}: {e}", exc_info=True)
 
-        page = next_page
+    logger.info(f"Total de {len(extracted_rows)} itens extraídos dos arquivos Mainô.")
+    return extracted_rows
 
+
+def load_gerensys_history_files(work_dir: Path) -> List[Dict[str, Any]]:
+    """
+    Extracts sales history from Gerensys files matching '*Histórico Gerensys*.xlsx'.
+    Maps old Gerensys product codes to Mainô codes using the 'Códigos' sheet mapping when available.
+    Filters out 'Entrada de Mercadoria' records.
+    """
+    hist_files = [f for f in os.listdir(work_dir) if "Histórico Gerensys" in f and f.endswith(".xlsx")]
+    extracted_rows: List[Dict[str, Any]] = []
+
+    if not hist_files:
+        logger.info(f"Nenhum arquivo histórico Gerensys encontrado em {work_dir}.")
+        return extracted_rows
+
+    for fname in sorted(hist_files):
+        fpath = work_dir / fname
+        logger.info(f"Processando arquivo histórico Gerensys: {fname}...")
+        try:
+            bio = read_excel_shared(fpath)
+            xl = pd.ExcelFile(bio)
+
+            # Build product code mapping dictionary if 'Códigos' sheet exists
+            code_mapping: Dict[str, str] = {}
+            if "Códigos" in xl.sheet_names:
+                df_codes = pd.read_excel(xl, sheet_name="Códigos")
+                if "Código Maino" in df_codes.columns and "Código Gerensys" in df_codes.columns:
+                    for _, crow in df_codes.iterrows():
+                        gcode = str(crow.get("Código Gerensys", "")).strip().upper()
+                        mcode = str(crow.get("Código Maino", "")).strip().upper()
+                        if gcode and mcode and gcode != "NAN":
+                            code_mapping[gcode] = mcode
+
+            # Primary sheet name (either 'Histórico' or first sheet)
+            sheet_name = "Histórico" if "Histórico" in xl.sheet_names else xl.sheet_names[0]
+            df_hist = pd.read_excel(xl, sheet_name=sheet_name)
+
+            if df_hist.empty:
+                logger.warning(f"Planilha de histórico {fname} [{sheet_name}] está vazia.")
+                continue
+
+            for _, row in df_hist.iterrows():
+                tipo_mov = str(row.get("Tipo de Movimentação") or "").strip()
+
+                # Requirement: Entrada de Mercadoria -> Desconsiderar
+                if "entrada" in tipo_mov.lower():
+                    continue
+
+                g_prod_code = str(row.get("Código Produto") or "").strip().upper()
+                if not g_prod_code or g_prod_code in {"NAN", "NONE", ""}:
+                    continue
+
+                # Map product code to Mainô code if available
+                final_prod_code = code_mapping.get(g_prod_code, g_prod_code)
+
+                qty = safe_float(row.get("Quantidade"))
+                val_final = safe_float(row.get("Valor Final") or row.get("Valor Original"))
+                nro_nota = str(row.get("Nro Nota") or row.get("Id Mov") or "").strip()
+                if nro_nota in {"nan", "None", ""}:
+                    nro_nota = "N/A"
+
+                id_mov = str(row.get("Id Mov") or nro_nota).strip()
+
+                # Fiscal status per specification:
+                # Nota Fiscal 55 -> Venda com Nota Fiscal
+                # Pedido de Venda -> Venda sem Nota Fiscal
+                if "nota fiscal" in tipo_mov.lower():
+                    nf_status = "NF-e Aceita"
+                    nf_id = nro_nota
+                else: # Pedido de Venda
+                    nf_status = "NAO EMITIDA"
+                    nf_id = "N/A"
+
+                parsed_date = pd.to_datetime(row.get("DtEmissao"), dayfirst=True, errors="coerce")
+                date_str = parsed_date.strftime("%Y-%m-%d") if pd.notna(parsed_date) else "N/A"
+
+                doc = str(row.get("Documento") or "").strip()
+                if doc in {"nan", "None", ""}:
+                    doc = "N/A"
+
+                client_name = str(row.get("Razão Social") or row.get("Cliente") or "N/A").strip()
+                uf = extract_uf_from_string(client_name)
+
+                rep = str(row.get("Vendedor") or DEFAULT_REPRESENTATIVE).strip()
+                if not rep or rep in {"nan", "None", "N/A"}:
+                    rep = DEFAULT_REPRESENTATIVE
+
+                extracted_rows.append({
+                    "Pedido ID": f"GER-{id_mov}",
+                    "Número do Pedido": nro_nota,
+                    "Código do Produto": final_prod_code,
+                    "Quantidade": qty,
+                    "ID da Nota Fiscal": nf_id,
+                    "Status da Nota Fiscal": nf_status,
+                    "Status do Pedido": "Pedido gerado",
+                    "Data do Pedido": date_str,
+                    "URL NFe": "N/A",
+                    "CPF/CNPJ do Cliente": doc,
+                    "Nome do Cliente": client_name,
+                    "CEP": "N/A",
+                    "UF": uf,
+                    "Cidade": "N/A",
+                    "Valor Total": val_final,
+                    "Representante": rep,
+                })
+
+        except Exception as e:
+            logger.error(f"Erro ao processar histórico Gerensys {fname}: {e}", exc_info=True)
+
+    logger.info(f"Total de {len(extracted_rows)} itens extraídos dos históricos Gerensys.")
     return extracted_rows
 
 
 def save_to_excel(rows: List[Dict[str, Any]], filepath: Path) -> None:
-    """Saves the extracted sales order item details to an Excel file."""
-    preferred_headers = [
+    """
+    Saves the extracted sales order item details to an Excel file with required column ordering.
+    Handles PermissionError if target Excel file is currently open.
+    """
+    if not rows:
+        logger.warning("Nenhum dado extraído para salvar no Excel.")
+        return
+
+    # Prompt required columns first
+    required_headers = [
         "Pedido ID",
         "Número do Pedido",
         "Código do Produto",
@@ -277,46 +359,60 @@ def save_to_excel(rows: List[Dict[str, Any]], filepath: Path) -> None:
             if key not in discovered_headers:
                 discovered_headers.append(key)
 
-    headers = [header for header in preferred_headers if header in discovered_headers]
-    headers.extend([header for header in discovered_headers if header not in headers])
+    headers = [h for h in required_headers if h in discovered_headers]
+    headers.extend([h for h in discovered_headers if h not in headers])
 
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = "Itens Pedidos Confirmados"
 
     sheet.append(headers)
-
     for row in rows:
         sheet.append([row.get(col) for col in headers])
 
     filepath.parent.mkdir(parents=True, exist_ok=True)
-    workbook.save(filepath)
-    logger.info(f"Planilha Excel gerada com sucesso em: {filepath}")
+    
+    # Save to Excel with retry and exception handling for file locks
+    try:
+        workbook.save(filepath)
+        logger.info(f"Planilha Excel gerada com sucesso em: {filepath} ({len(rows)} linhas)")
+    except PermissionError:
+        logger.warning(
+            f"O arquivo '{filepath.name}' está aberto em outro programa (ex: Excel). "
+            f"Tentando salvar como temporário..."
+        )
+        temp_path = filepath.parent / f"{filepath.stem}_novo{filepath.suffix}"
+        workbook.save(temp_path)
+        logger.warning(
+            f"Salvo em '{temp_path.name}'. Por favor, feche '{filepath.name}' para permitir a substituição automática."
+        )
+        try:
+            os.replace(temp_path, filepath)
+            logger.info(f"Substituição concluída com sucesso em: {filepath}")
+        except Exception:
+            logger.error(
+                f"Não foi possível sobrescrever '{filepath.name}'. O resultado foi mantido em '{temp_path.name}'."
+            )
 
 
 def main() -> None:
-    # Load env variables from .env file if it exists
     load_dotenv()
-    
-    token = os.getenv("MAINO_API_TOKEN")
-    if not token:
-        token = YOUR_SECRET_TOKEN
-    if not token:
-        logger.error(
-            "Token de API não encontrado. Por favor, configure a variável de ambiente 'MAINO_API_TOKEN'."
-        )
-        sys.exit(1)
-        
-    logger.info(f"Iniciando exportação de pedidos com status '{ORDER_STATUS_FILTER}'...")
-    session = create_session()
-    
+    logger.info("Iniciando extração e consolidação de dados de vendas a partir das planilhas...")
+
     try:
-        rows = process_orders_and_invoices(session, token, ORDER_STATUS_FILTER)
-        logger.info(f"Total de {len(rows)} itens de pedido extraídos.")
-        save_to_excel(rows, OUTPUT_FILE)
-        logger.info("Exportação concluída com sucesso.")
+        maino_rows = load_maino_sales_files(WORK_DIR)
+        gerensys_rows = load_gerensys_history_files(WORK_DIR)
+        all_rows = maino_rows + gerensys_rows
+
+        if not all_rows:
+            logger.error("Nenhum dado de vendas pôde ser extraído das planilhas indicadas.")
+            sys.exit(1)
+
+        logger.info(f"Total consolidado: {len(all_rows)} itens de pedido.")
+        save_to_excel(all_rows, OUTPUT_FILE)
+        logger.info("Processo de extração concluído com sucesso.")
     except Exception as e:
-        logger.error(f"A execução falhou: {e}")
+        logger.error(f"A execução do extrator falhou: {e}", exc_info=True)
         sys.exit(1)
 
 
