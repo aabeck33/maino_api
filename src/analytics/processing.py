@@ -194,7 +194,7 @@ class SalesAnalytics:
                     start_ts, end_ts = end_ts, start_ts
 
                 # Keep end date inclusive for rows that carry time-of-day information.
-                end_ts_inclusive = end_ts + pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1) if end_ts is not None else None
+                end_ts_inclusive = end_ts + pd.Timedelta(days=1) - pd.Timedelta(microseconds=1) if end_ts is not None else None
 
                 mask = pd.Series(True, index=filtered_df.index)
                 if start_ts is not None:
