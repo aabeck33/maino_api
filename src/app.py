@@ -9,17 +9,17 @@
 Alvaro Adriano Beck - 07/2026
 """
 
-import sys
 import io
 from pathlib import Path
 import pandas as pd
 import streamlit as st
 
+from config.settings import SETTINGS
 from utils.pdf_report import generate_executive_pdf
 from utils.logger import setup_logger
 from analytics.processing import SalesAnalytics
 from dashboard.components import apply_css, brand_header
-from dashboard.views import (
+from dashboard.views_sections import (
     render_overview,
     render_products,
     render_orders,
@@ -30,13 +30,6 @@ from dashboard.views import (
     render_representatives,
     render_profitability,
 )
-
-# Adjust system path to support absolute/package imports
-ROOT_DIR = Path(__file__).resolve().parent
-sys.path.insert(0, str(ROOT_DIR))
-
-# Caminho da Planilha de pedidos
-PLANILHA_PEDIDOS = "pedidos_confirmados.xlsx"
 
 logger = setup_logger("maino_app")
 
@@ -75,8 +68,8 @@ def main():
     """ Main function to run the Streamlit app.
     """
     # Load dataset
-    excel_path = Path(__file__).resolve().parent.parent / "work" / PLANILHA_PEDIDOS
-    products_excel_path = Path(__file__).resolve().parent.parent / "work" / "produtos.xlsx"
+    excel_path = SETTINGS.data_file_path(SETTINGS.data_files.sales_orders)
+    products_excel_path = SETTINGS.data_file_path(SETTINGS.data_files.products)
 
     try:
         analytics = SalesAnalytics(excel_path, products_excel_path)
@@ -148,7 +141,7 @@ def main():
     profitability_df = analytics.build_profitability_dataset(filtered_df)
 
     if not profitability_df.empty:
-        profitability_output_path = Path(__file__).resolve().parent.parent / "work" / "indicadores_financeiros.xlsx"
+        profitability_output_path = SETTINGS.data_file_path(SETTINGS.data_files.profitability_output)
         profitability_output_path.parent.mkdir(parents=True, exist_ok=True)
         profitability_df.to_excel(profitability_output_path, index=False, sheet_name="Rentabilidade")
         logger.info("Arquivo de rentabilidade exportado para %s", profitability_output_path)
@@ -156,7 +149,7 @@ def main():
         product_summary = analytics.get_profitability_by_product(profitability_df)
         rep_summary = analytics.get_profitability_by_representative(profitability_df)
         customer_summary = analytics.get_profitability_by_customer(profitability_df)
-        summary_output_path = Path(__file__).resolve().parent.parent / "work" / "indicadores_financeiros_resumo.xlsx"
+        summary_output_path = SETTINGS.data_file_path(SETTINGS.data_files.profitability_summary_output)
         with pd.ExcelWriter(summary_output_path) as writer:
             product_summary.to_excel(writer, sheet_name="Produtos", index=False)
             rep_summary.to_excel(writer, sheet_name="Representantes", index=False)
@@ -171,9 +164,22 @@ def main():
             "📄 Gerar PDF",
             use_container_width=True
         ):
+        financial_kpis = analytics.calculate_financial_kpis(profitability_df)
+        monthly_profitability_df = analytics.get_monthly_profitability(profitability_df)
+        product_profitability_df = analytics.get_profitability_by_product(profitability_df)
+        representative_performance_df = analytics.get_representative_performance(filtered_df)
+        state_ticket_df = analytics.get_state_ticket_average(filtered_df)
+
         pdf_file = generate_executive_pdf(
             analytics,
-            filtered_df
+            filtered_df,
+            profitability_df=profitability_df,
+            core_kpis=kpis,
+            financial_kpis=financial_kpis,
+            monthly_profitability_df=monthly_profitability_df,
+            product_profitability_df=product_profitability_df,
+            representative_performance_df=representative_performance_df,
+            state_ticket_df=state_ticket_df,
         )
         with open(pdf_file, "rb") as f:
             st.sidebar.download_button(
