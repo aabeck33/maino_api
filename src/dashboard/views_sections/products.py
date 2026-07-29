@@ -17,6 +17,10 @@ def render_products(sales_df: pd.DataFrame, is_dark: bool) -> None:
     """Renders product analytics including ranking, Pareto and ABC."""
     st.markdown("### Análise de Produtos")
 
+    unique_products = int(sales_df["Código do Produto"].astype(str).nunique()) if "Código do Produto" in sales_df.columns else 0
+    metric_card("Produtos Únicos Comercializados", f"{unique_products:,}", delta="Portfólio Ativo", delta_type="up")
+    st.markdown("<div style='margin: 1rem 0;'></div>", unsafe_allow_html=True)
+
     chart_container("Ranking de Produtos Mais Vendidos", "Selecione o limite de exibição")
     limit = st.radio("Quantidade de itens no ranking:", [10, 20], horizontal=True)
 

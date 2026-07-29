@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from analytics.kpis.shared import coerce_customer_key
+from analytics.kpis.shared import coerce_customer_key, revenue_series
 
 
 def summarize_customers(sales_df: pd.DataFrame) -> pd.DataFrame:
@@ -25,6 +25,7 @@ def summarize_customers(sales_df: pd.DataFrame) -> pd.DataFrame:
 
     customer_summary_df = sales_df.copy()
     customer_summary_df["Cliente_Chave"] = coerce_customer_key(customer_summary_df)
+    customer_summary_df["Valor Total"] = revenue_series(customer_summary_df, value_column="Valor Total")
     customer_summary_df = (
         customer_summary_df.groupby("Cliente_Chave", dropna=False, as_index=False)
         .agg(

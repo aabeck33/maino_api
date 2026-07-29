@@ -8,11 +8,13 @@ Compatível com Python 3.11+.
 
 import ctypes
 import io
+import json
 import logging
 import os
 import re
 import sys
 import time
+import unicodedata
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -39,7 +41,318 @@ load_dotenv()
 
 WORK_DIR = Path(__file__).resolve().parent.parent / "work"
 OUTPUT_FILE = WORK_DIR / "pedidos_confirmados.xlsx"
+QUALITY_REPORT_FILE = WORK_DIR / "pedidos_confirmados_qualidade.json"
 DEFAULT_REPRESENTATIVE = os.getenv("NOME_PADRAO_REPRESENTANTE", "Leonardo")
+
+EXPECTED_COLUMNS = [
+    "Pedido ID",
+    "Número do Pedido",
+    "Código do Produto",
+    "Quantidade",
+    "ID da Nota Fiscal",
+    "Status da Nota Fiscal",
+    "Status do Pedido",
+    "Data do Pedido",
+    "URL NFe",
+    "CPF/CNPJ do Cliente",
+    "Nome do Cliente",
+    "CEP",
+    "UF",
+    "Cidade",
+    "Valor Total",
+    "Representante",
+]
+
+
+def _is_missing(value: Any) -> bool:
+    """Returns True when value should be treated as missing in output rows."""
+    if value is None:
+        return True
+    if isinstance(value, float) and pd.isna(value):
+        return True
+    text = str(value).strip()
+    return text == "" or text.upper() in {"N/A", "NONE", "NAN", "<NA>"}
+
+
+def _normalize_document(value: Any) -> str:
+    """Normalizes CPF/CNPJ by keeping only digits."""
+    if value is None:
+        return ""
+    return "".join(char for char in str(value) if char.isdigit())
+
+
+def _normalize_name(value: Any) -> str:
+    """Normalizes customer names for deterministic matching."""
+    if value is None:
+        return ""
+    text = str(value).strip()
+    text = unicodedata.normalize("NFKD", text)
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = re.sub(r"\s+", " ", text)
+    return text.upper()
+
+
+def _normalize_order_status(value: Any) -> str:
+    """Normalizes order status text for consistent comparisons."""
+    if value is None:
+        return ""
+    text = unicodedata.normalize("NFKD", str(value).strip())
+    text = "".join(ch for ch in text if unicodedata.category(ch) != "Mn")
+    text = re.sub(r"\s+", " ", text)
+    return text.lower()
+
+
+def _resolve_customer_master_path(work_dir: Path) -> Optional[Path]:
+    """Resolves customer master workbook path supporting legacy typo fallback."""
+    candidates = [work_dir / "clientes.xlsx", work_dir / "clientes.xmlx"]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    return None
+
+
+def load_customers_master(work_dir: Path) -> dict[str, dict[str, dict[str, str]]]:
+    """Loads customer master and creates lookup indices by document and name."""
+    customer_file = _resolve_customer_master_path(work_dir)
+    if customer_file is None:
+        logger.warning("Arquivo de clientes não encontrado (clientes.xlsx/clientes.xmlx).")
+        return {"by_doc": {}, "by_name": {}}
+
+    try:
+        bio = read_excel_shared(customer_file)
+        customers_df = pd.read_excel(bio)
+    except Exception as exc:
+        logger.warning("Falha ao carregar base de clientes em %s: %s", customer_file.name, exc)
+        return {"by_doc": {}, "by_name": {}}
+
+    if customers_df.empty:
+        logger.warning("Base de clientes em %s está vazia.", customer_file.name)
+        return {"by_doc": {}, "by_name": {}}
+
+    by_doc: dict[str, dict[str, str]] = {}
+    by_name: dict[str, dict[str, str]] = {}
+
+    for _, row in customers_df.iterrows():
+        status = str(row.get("Status") or "").strip().lower()
+        if status and status not in {"ativo", "active"}:
+            continue
+
+        document_raw = row.get("CNPJ/CPF") or row.get("CPF/CNPJ") or row.get("CPF/CNPJ do Cliente")
+        legal_name_raw = row.get("Razão Social") or row.get("Razao Social")
+        trade_name_raw = row.get("Nome Fantasia")
+        city_raw = row.get("Município") or row.get("Municipio") or row.get("Cidade")
+        uf_raw = row.get("UF")
+        cep_raw = row.get("CEP")
+        representative_raw = row.get("Representante")
+
+        normalized_doc = _normalize_document(document_raw)
+        normalized_legal_name = _normalize_name(legal_name_raw)
+        normalized_trade_name = _normalize_name(trade_name_raw)
+
+        representative = str(representative_raw).strip() if not _is_missing(representative_raw) else DEFAULT_REPRESENTATIVE
+        cep = normalize_cep(str(cep_raw)) if not _is_missing(cep_raw) else "N/A"
+        uf = str(uf_raw).strip().upper() if not _is_missing(uf_raw) else "N/A"
+        if uf == "N/A" and cep != "N/A":
+            uf = map_cep_to_uf(cep)
+        city = str(city_raw).strip() if not _is_missing(city_raw) else "N/A"
+        preferred_name = str(legal_name_raw or trade_name_raw or "N/A").strip() or "N/A"
+
+        payload = {
+            "CPF/CNPJ do Cliente": str(document_raw).strip() if not _is_missing(document_raw) else "N/A",
+            "Nome do Cliente": preferred_name,
+            "CEP": cep,
+            "UF": uf if uf else "N/A",
+            "Cidade": city,
+            "Representante": representative if representative else DEFAULT_REPRESENTATIVE,
+        }
+
+        if normalized_doc and normalized_doc not in by_doc:
+            by_doc[normalized_doc] = payload
+
+        if normalized_legal_name and normalized_legal_name not in by_name:
+            by_name[normalized_legal_name] = payload
+        if normalized_trade_name and normalized_trade_name not in by_name:
+            by_name[normalized_trade_name] = payload
+
+    logger.info(
+        "Base de clientes carregada: %s documentos e %s nomes indexados.",
+        len(by_doc),
+        len(by_name),
+    )
+    return {"by_doc": by_doc, "by_name": by_name}
+
+
+def enrich_rows_with_customers_master(
+    rows: List[Dict[str, Any]],
+    customers_index: dict[str, dict[str, dict[str, str]]],
+) -> List[Dict[str, Any]]:
+    """Enriches extracted rows with customer master values when fields are missing."""
+    if not rows:
+        return rows
+
+    by_doc = customers_index.get("by_doc", {})
+    by_name = customers_index.get("by_name", {})
+    if not by_doc and not by_name:
+        return rows
+
+    enriched_count = 0
+    for row in rows:
+        doc_key = _normalize_document(row.get("CPF/CNPJ do Cliente"))
+        name_key = _normalize_name(row.get("Nome do Cliente"))
+
+        customer_info = None
+        if doc_key:
+            customer_info = by_doc.get(doc_key)
+        if customer_info is None and name_key:
+            customer_info = by_name.get(name_key)
+        if customer_info is None:
+            continue
+
+        row_updated = False
+        for field in ["CPF/CNPJ do Cliente", "Nome do Cliente", "CEP", "UF", "Cidade", "Representante"]:
+            if _is_missing(row.get(field)) and not _is_missing(customer_info.get(field)):
+                row[field] = customer_info[field]
+                row_updated = True
+
+        # Final fallback for UF based on CEP
+        if _is_missing(row.get("UF")) and not _is_missing(row.get("CEP")):
+            row["UF"] = map_cep_to_uf(str(row.get("CEP")))
+            row_updated = True
+
+        if _is_missing(row.get("Representante")):
+            row["Representante"] = DEFAULT_REPRESENTATIVE
+            row_updated = True
+
+        if row_updated:
+            enriched_count += 1
+
+    logger.info("Linhas enriquecidas com base de clientes: %s", enriched_count)
+    return rows
+
+
+def filter_generated_orders(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Keeps only rows whose order status is exactly 'Pedido gerado' (normalized)."""
+    if not rows:
+        return rows
+
+    filtered_rows: List[Dict[str, Any]] = []
+    for row in rows:
+        status = _normalize_order_status(row.get("Status do Pedido") or row.get("Status do pedido") or "")
+        if status == "pedido gerado":
+            filtered_rows.append(row)
+
+    logger.info(
+        "Filtro por status aplicado: %s de %s linhas mantidas com 'Pedido gerado'.",
+        len(filtered_rows),
+        len(rows),
+    )
+    return filtered_rows
+
+
+def normalize_consolidated_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Normalizes critical fields and guarantees expected output columns."""
+    normalized_rows: List[Dict[str, Any]] = []
+
+    for row in rows:
+        normalized_row: Dict[str, Any] = {column: row.get(column, "N/A") for column in EXPECTED_COLUMNS}
+
+        normalized_row["Pedido ID"] = str(normalized_row.get("Pedido ID") or "N/A").strip() or "N/A"
+        normalized_row["Número do Pedido"] = str(normalized_row.get("Número do Pedido") or "N/A").strip() or "N/A"
+        normalized_row["Código do Produto"] = str(normalized_row.get("Código do Produto") or "N/A").strip().upper() or "N/A"
+        normalized_row["ID da Nota Fiscal"] = str(normalized_row.get("ID da Nota Fiscal") or "N/A").strip() or "N/A"
+        normalized_row["Status da Nota Fiscal"] = str(normalized_row.get("Status da Nota Fiscal") or "N/A").strip() or "N/A"
+
+        status_order_norm = _normalize_order_status(normalized_row.get("Status do Pedido"))
+        normalized_row["Status do Pedido"] = "Pedido gerado" if status_order_norm == "pedido gerado" else (
+            str(normalized_row.get("Status do Pedido") or "N/A").strip() or "N/A"
+        )
+
+        normalized_row["Data do Pedido"] = str(normalized_row.get("Data do Pedido") or "N/A").strip() or "N/A"
+        normalized_row["URL NFe"] = str(normalized_row.get("URL NFe") or "N/A").strip() or "N/A"
+        normalized_row["CPF/CNPJ do Cliente"] = str(normalized_row.get("CPF/CNPJ do Cliente") or "N/A").strip() or "N/A"
+        normalized_row["Nome do Cliente"] = str(normalized_row.get("Nome do Cliente") or "N/A").strip() or "N/A"
+        normalized_row["Cidade"] = str(normalized_row.get("Cidade") or "N/A").strip() or "N/A"
+
+        normalized_row["CEP"] = normalize_cep(str(normalized_row.get("CEP") or "N/A")) if not _is_missing(normalized_row.get("CEP")) else "N/A"
+        normalized_row["UF"] = str(normalized_row.get("UF") or "N/A").strip().upper() or "N/A"
+        if normalized_row["UF"] == "N/A" and normalized_row["CEP"] != "N/A":
+            normalized_row["UF"] = map_cep_to_uf(normalized_row["CEP"])
+
+        normalized_row["Representante"] = str(normalized_row.get("Representante") or "").strip() or DEFAULT_REPRESENTATIVE
+
+        normalized_row["Quantidade"] = safe_float(normalized_row.get("Quantidade"))
+        normalized_row["Valor Total"] = safe_float(normalized_row.get("Valor Total"))
+
+        normalized_rows.append(normalized_row)
+
+    return normalized_rows
+
+
+def deduplicate_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Removes exact duplicate rows after normalization."""
+    if not rows:
+        return rows
+
+    unique_rows: List[Dict[str, Any]] = []
+    seen: set[tuple[Any, ...]] = set()
+    for row in rows:
+        row_key = tuple(row.get(column) for column in EXPECTED_COLUMNS)
+        if row_key in seen:
+            continue
+        seen.add(row_key)
+        unique_rows.append(row)
+
+    removed = len(rows) - len(unique_rows)
+    if removed > 0:
+        logger.info("Deduplicacao aplicada: %s linhas duplicadas removidas.", removed)
+    return unique_rows
+
+
+def build_quality_report(
+    rows: List[Dict[str, Any]],
+    raw_total: int,
+    filtered_total: int,
+) -> dict[str, Any]:
+    """Builds basic quality metrics for the consolidated output."""
+    total = len(rows)
+    if total == 0:
+        return {
+            "raw_total": raw_total,
+            "after_status_filter": filtered_total,
+            "final_total": 0,
+            "missing_cpf_cnpj": 0,
+            "missing_customer_name": 0,
+            "missing_uf": 0,
+            "missing_representative": 0,
+            "status_do_pedido_distribution": {},
+        }
+
+    status_distribution: dict[str, int] = {}
+    for row in rows:
+        status = str(row.get("Status do Pedido") or "N/A").strip() or "N/A"
+        status_distribution[status] = status_distribution.get(status, 0) + 1
+
+    def missing_count(column: str) -> int:
+        return sum(1 for row in rows if _is_missing(row.get(column)))
+
+    return {
+        "raw_total": raw_total,
+        "after_status_filter": filtered_total,
+        "final_total": total,
+        "missing_cpf_cnpj": missing_count("CPF/CNPJ do Cliente"),
+        "missing_customer_name": missing_count("Nome do Cliente"),
+        "missing_uf": missing_count("UF"),
+        "missing_representative": missing_count("Representante"),
+        "status_do_pedido_distribution": status_distribution,
+    }
+
+
+def save_quality_report(report: dict[str, Any], filepath: Path) -> None:
+    """Persists the consolidation quality report as JSON for traceability."""
+    filepath.parent.mkdir(parents=True, exist_ok=True)
+    with filepath.open("w", encoding="utf-8") as handle:
+        json.dump(report, handle, ensure_ascii=False, indent=2)
+    logger.info("Relatorio de qualidade salvo em: %s", filepath)
 
 
 def read_excel_shared(fpath: Path | str) -> io.BytesIO:
@@ -96,6 +409,55 @@ def read_excel_shared(fpath: Path | str) -> io.BytesIO:
         ctypes.windll.kernel32.CloseHandle(handle)
 
     return io.BytesIO(buf)
+
+
+def load_product_code_mapping(work_dir: Path) -> Dict[str, str]:
+    """Loads Gerensys->Maino product code mapping from products workbook.
+
+    Priority:
+    1) work/produtos.xlsx, sheet "Códigos"
+    2) Any '*Histórico Gerensys*.xlsx' workbook containing sheet "Códigos"
+    """
+    mapping: Dict[str, str] = {}
+
+    product_workbook = work_dir / "produtos.xlsx"
+    if product_workbook.exists():
+        try:
+            bio = read_excel_shared(product_workbook)
+            df_codes = pd.read_excel(bio, sheet_name="Códigos")
+            if "Código Maino" in df_codes.columns and "Código Gerensys" in df_codes.columns:
+                for _, crow in df_codes.iterrows():
+                    gcode = str(crow.get("Código Gerensys", "")).strip().upper()
+                    mcode = str(crow.get("Código Maino", "")).strip().upper()
+                    if gcode and mcode and gcode != "NAN":
+                        mapping[gcode] = mcode
+                if mapping:
+                    return mapping
+        except Exception as exc:
+            logger.warning("Falha ao carregar mapeamento de códigos em produtos.xlsx: %s", exc)
+
+    hist_files = [f for f in os.listdir(work_dir) if "Histórico Gerensys" in f and f.endswith(".xlsx")]
+    for fname in sorted(hist_files):
+        fpath = work_dir / fname
+        try:
+            bio = read_excel_shared(fpath)
+            xl = pd.ExcelFile(bio)
+            if "Códigos" not in xl.sheet_names:
+                continue
+
+            df_codes = pd.read_excel(xl, sheet_name="Códigos")
+            if "Código Maino" in df_codes.columns and "Código Gerensys" in df_codes.columns:
+                for _, crow in df_codes.iterrows():
+                    gcode = str(crow.get("Código Gerensys", "")).strip().upper()
+                    mcode = str(crow.get("Código Maino", "")).strip().upper()
+                    if gcode and mcode and gcode != "NAN":
+                        mapping[gcode] = mcode
+                if mapping:
+                    return mapping
+        except Exception as exc:
+            logger.warning("Falha ao carregar mapeamento de códigos no arquivo %s: %s", fname, exc)
+
+    return mapping
 
 
 def load_maino_sales_files(work_dir: Path) -> List[Dict[str, Any]]:
@@ -236,23 +598,14 @@ def load_gerensys_history_files(work_dir: Path) -> List[Dict[str, Any]]:
         logger.info(f"Nenhum arquivo histórico Gerensys encontrado em {work_dir}.")
         return extracted_rows
 
+    code_mapping = load_product_code_mapping(work_dir)
+
     for fname in sorted(hist_files):
         fpath = work_dir / fname
         logger.info(f"Processando arquivo histórico Gerensys: {fname}...")
         try:
             bio = read_excel_shared(fpath)
             xl = pd.ExcelFile(bio)
-
-            # Build product code mapping dictionary if 'Códigos' sheet exists
-            code_mapping: Dict[str, str] = {}
-            if "Códigos" in xl.sheet_names:
-                df_codes = pd.read_excel(xl, sheet_name="Códigos")
-                if "Código Maino" in df_codes.columns and "Código Gerensys" in df_codes.columns:
-                    for _, crow in df_codes.iterrows():
-                        gcode = str(crow.get("Código Gerensys", "")).strip().upper()
-                        mcode = str(crow.get("Código Maino", "")).strip().upper()
-                        if gcode and mcode and gcode != "NAN":
-                            code_mapping[gcode] = mcode
 
             # Primary sheet name (either 'Histórico' or first sheet)
             sheet_name = "Histórico" if "Histórico" in xl.sheet_names else xl.sheet_names[0]
@@ -403,6 +756,15 @@ def main() -> None:
         maino_rows = load_maino_sales_files(WORK_DIR)
         gerensys_rows = load_gerensys_history_files(WORK_DIR)
         all_rows = maino_rows + gerensys_rows
+        raw_total = len(all_rows)
+
+        all_rows = filter_generated_orders(all_rows)
+        filtered_total = len(all_rows)
+
+        customers_index = load_customers_master(WORK_DIR)
+        all_rows = enrich_rows_with_customers_master(all_rows, customers_index)
+        all_rows = normalize_consolidated_rows(all_rows)
+        all_rows = deduplicate_rows(all_rows)
 
         if not all_rows:
             logger.error("Nenhum dado de vendas pôde ser extraído das planilhas indicadas.")
@@ -410,6 +772,8 @@ def main() -> None:
 
         logger.info(f"Total consolidado: {len(all_rows)} itens de pedido.")
         save_to_excel(all_rows, OUTPUT_FILE)
+        quality_report = build_quality_report(all_rows, raw_total=raw_total, filtered_total=filtered_total)
+        save_quality_report(quality_report, QUALITY_REPORT_FILE)
         logger.info("Processo de extração concluído com sucesso.")
     except Exception as e:
         logger.error(f"A execução do extrator falhou: {e}", exc_info=True)

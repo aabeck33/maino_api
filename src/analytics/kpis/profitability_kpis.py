@@ -6,7 +6,7 @@ import os
 from typing import Any
 import pandas as pd
 
-from analytics.kpis.shared import coerce_customer_key
+from analytics.kpis.shared import coerce_customer_key, revenue_series, total_revenue
 
 
 def _get_variable_cost_percentage(origin: str | None) -> float:
@@ -23,12 +23,31 @@ def _get_variable_cost_percentage(origin: str | None) -> float:
     return float(os.getenv("CUSTO_VARIAVEL_NACIONAL", "0.2615"))
 
 
+def _build_order_based_revenue(profitability_df: pd.DataFrame) -> pd.Series:
+    """Builds line-level revenue from item totals.
+
+    In consolidated dataset, ``Valor Total`` is line-level (unit price * quantity),
+    so profitability should preserve it directly per row.
+    """
+    if "Valor Total" not in profitability_df.columns:
+        reference_price = pd.to_numeric(
+            profitability_df.get("Preço de Venda", pd.Series(0.0, index=profitability_df.index, dtype="float64")),
+            errors="coerce",
+        ).fillna(0.0)
+        quantity = pd.to_numeric(
+            profitability_df.get("Quantidade", pd.Series(0.0, index=profitability_df.index, dtype="float64")),
+            errors="coerce",
+        ).fillna(0.0)
+        return reference_price * quantity
+    return revenue_series(profitability_df, value_column="Valor Total")
+
+
 def build_profitability_dataset(sales_df: pd.DataFrame, products_df: pd.DataFrame) -> pd.DataFrame:
     """Builds item-level profitability dataset as single source of truth.
 
     Formula
     -------
-    Faturamento = PU de saída * Quantidade
+    Faturamento = Valor Total do Item
     Custo Total = (PU de entrada * Quantidade) + (Faturamento * Custo Variável %)
     Margem de contribuição = Faturamento - Custo Total
     Margem Bruta (%) = Margem de contribuição / Faturamento * 100
@@ -106,7 +125,7 @@ def build_profitability_dataset(sales_df: pd.DataFrame, products_df: pd.DataFram
     profitability_df["Preço de Venda"] = pd.to_numeric(profitability_df.get("PU de saída", 0.0), errors="coerce").fillna(0.0)
     profitability_df["Origem"] = profitability_df.get("Origem", "").astype(str).fillna("")
 
-    profitability_df["Faturamento"] = profitability_df["Preço de Venda"] * profitability_df["Quantidade"]
+    profitability_df["Faturamento"] = _build_order_based_revenue(profitability_df)
     profitability_df["Custo Variável (%)"] = profitability_df["Origem"].apply(_get_variable_cost_percentage)
     profitability_df["Custo Total"] = (
         profitability_df["Preço de Entrada"] * profitability_df["Quantidade"]
@@ -137,8 +156,16 @@ def build_profitability_dataset(sales_df: pd.DataFrame, products_df: pd.DataFram
     return profitability_df
 
 
-def calculate_financial_kpis(profitability_df: pd.DataFrame, fixed_cost_pct: float) -> dict[str, Any]:
+def calculate_financial_kpis(
+    profitability_df: pd.DataFrame,
+    fixed_cost_pct: float,
+    revenue_total_override: float | None = None,
+) -> dict[str, Any]:
     """Calculates financial KPIs from profitability base."""
+    normalized_fixed_cost_pct = float(fixed_cost_pct)
+    if abs(normalized_fixed_cost_pct) <= 1.0:
+        normalized_fixed_cost_pct *= 100.0
+
     if profitability_df.empty:
         return {
             "revenue_total": 0.0,
@@ -147,12 +174,13 @@ def calculate_financial_kpis(profitability_df: pd.DataFrame, fixed_cost_pct: flo
             "top_product": "N/A",
             "top_representative": "N/A",
             "top_customer": "N/A",
-            "fixed_cost_pct": fixed_cost_pct,
+            "fixed_cost_pct": normalized_fixed_cost_pct,
+            "fixed_cost_value": 0.0,
             "estimated_operating_profit_pct": 0.0,
             "estimated_operating_profit_value": 0.0,
         }
 
-    revenue_total = float(profitability_df["Faturamento"].sum())
+    revenue_total = float(revenue_total_override) if revenue_total_override is not None else total_revenue(profitability_df, value_column="Faturamento")
     gross_profit_total = float(profitability_df["Margem de contribuição"].sum())
     gross_margin_avg = (gross_profit_total / revenue_total * 100) if revenue_total > 0 else 0.0
 
@@ -164,8 +192,9 @@ def calculate_financial_kpis(profitability_df: pd.DataFrame, fixed_cost_pct: flo
     top_representative = rep_summary_df.iloc[0]["Representante"] if not rep_summary_df.empty else "N/A"
     top_customer = customer_summary_df.iloc[0]["Cliente"] if not customer_summary_df.empty else "N/A"
 
-    estimated_operating_profit_pct = gross_margin_avg - fixed_cost_pct
-    estimated_operating_profit_value = revenue_total * estimated_operating_profit_pct / 100
+    fixed_cost_value = revenue_total * normalized_fixed_cost_pct / 100
+    estimated_operating_profit_value = gross_profit_total - fixed_cost_value
+    estimated_operating_profit_pct = (estimated_operating_profit_value / revenue_total * 100) if revenue_total > 0 else 0.0
 
     return {
         "revenue_total": revenue_total,
@@ -174,7 +203,8 @@ def calculate_financial_kpis(profitability_df: pd.DataFrame, fixed_cost_pct: flo
         "top_product": top_product,
         "top_representative": top_representative,
         "top_customer": top_customer,
-        "fixed_cost_pct": fixed_cost_pct,
+        "fixed_cost_pct": normalized_fixed_cost_pct,
+        "fixed_cost_value": fixed_cost_value,
         "estimated_operating_profit_pct": estimated_operating_profit_pct,
         "estimated_operating_profit_value": estimated_operating_profit_value,
     }

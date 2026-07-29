@@ -11,11 +11,16 @@ from analytics.processing import SalesAnalytics
 from dashboard.components import custom_table, metric_card
 
 
-def render_overview(sales_df: pd.DataFrame, kpis: dict[str, Any]) -> None:
+def render_overview(sales_df: pd.DataFrame, kpis: dict[str, Any], analytics: SalesAnalytics | None = None) -> None:
     """Renders the executive KPI overview tab."""
     st.markdown("### Resumo Executivo")
 
-    c1, c2, c3, c4 = st.columns(4)
+    if analytics is not None:
+        total_revenue = analytics.calculate_total_revenue(sales_df)
+    else:
+        total_revenue = SalesAnalytics.calculate_total_revenue(sales_df)
+
+    c1, c2, c3 = st.columns(3)
     with c1:
         metric_card(
             label="Total de Pedidos",
@@ -32,22 +37,15 @@ def render_overview(sales_df: pd.DataFrame, kpis: dict[str, Any]) -> None:
         )
     with c3:
         metric_card(
-            label="Produtos Únicos Comercializados",
-            value=f"{kpis['unique_products']:,}",
-            delta="Portfólio Ativo",
+            label="Faturamento Total",
+            value=f"R$ {total_revenue:,.2f}",
+            delta="Receita de Pedidos",
             delta_type="up",
-        )
-    with c4:
-        metric_card(
-            "Clientes Ativos",
-            f"{kpis['active_customers']:,}",
-            delta="Clientes com Pedidos",
-            delta_type="warn" if kpis["active_customers"] < 450 else "up",
         )
 
     st.markdown("<div style='margin: 1rem 0;'></div>", unsafe_allow_html=True)
 
-    c5, c6, c7, c8 = st.columns(4)
+    c5, c6, c7 = st.columns(3)
     with c5:
         metric_card(
             label="Pedidos com Nota Fiscal",
@@ -68,13 +66,6 @@ def render_overview(sales_df: pd.DataFrame, kpis: dict[str, Any]) -> None:
             value=f"{kpis['nf_emission_rate']:.2f}%",
             delta="Cobertura Fiscal",
             delta_type="up" if kpis["nf_emission_rate"] > 80 else "warn",
-        )
-    with c8:
-        metric_card(
-            label="Pedidos por Cliente",
-            value=f"{kpis['orders_per_customer']:.2f}",
-            delta="Média Geral",
-            delta_type="up",
         )
 
     st.markdown("<div style='margin: 1.5rem 0;'></div>", unsafe_allow_html=True)

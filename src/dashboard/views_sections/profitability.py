@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Optional
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as ob
@@ -13,24 +15,45 @@ from dashboard.components import chart_container, chart_container_end, custom_ta
 from dashboard.views_sections.common import format_currency, get_plot_layout
 
 
-def render_profitability(sales_df: pd.DataFrame, profitability_df: pd.DataFrame, is_dark: bool) -> None:
+def render_profitability(
+    sales_df: pd.DataFrame,
+    profitability_df: Optional[pd.DataFrame],
+    is_dark: bool,
+    analytics: SalesAnalytics | None = None,
+    profitability_artifacts: dict | None = None,
+) -> None:
     """Renders the financial profitability dashboard section."""
     st.markdown("### Indicadores Financeiros e de Rentabilidade")
 
-    analytics = SalesAnalytics.__new__(SalesAnalytics)
-    analytics.products_df = SalesAnalytics.load_products_catalog(None)
+    if analytics is None:
+        analytics = SalesAnalytics.__new__(SalesAnalytics)
+        analytics.products_df = SalesAnalytics.load_products_catalog(None)
+
     analytics.df = sales_df
 
-    if profitability_df.empty:
+    if profitability_df is None or profitability_df.empty:
         profitability_df = analytics.build_profitability_dataset(sales_df)
 
-    kpis = analytics.calculate_financial_kpis(profitability_df)
-    product_summary_df = analytics.get_profitability_by_product(profitability_df)
-    representative_summary_df = analytics.get_profitability_by_representative(profitability_df)
-    customer_summary_df = analytics.get_profitability_by_customer(profitability_df)
-    monthly_profitability_df = analytics.get_monthly_profitability(profitability_df)
-    abc_revenue_df, _ = analytics.get_abc_analysis(product_summary_df, "Faturamento")
-    abc_profit_df, _ = analytics.get_abc_analysis(product_summary_df, "Margem de contribuição")
+    if profitability_artifacts is None:
+        unified_revenue_total = analytics.calculate_total_revenue(sales_df)
+        kpis = analytics.calculate_financial_kpis(
+            profitability_df,
+            revenue_total_override=unified_revenue_total,
+        )
+        product_summary_df = analytics.get_profitability_by_product(profitability_df)
+        representative_summary_df = analytics.get_profitability_by_representative(profitability_df)
+        customer_summary_df = analytics.get_profitability_by_customer(profitability_df)
+        monthly_profitability_df = analytics.get_monthly_profitability(profitability_df)
+        abc_revenue_df, _ = analytics.get_abc_analysis(product_summary_df, "Faturamento")
+        abc_profit_df, _ = analytics.get_abc_analysis(product_summary_df, "Margem de contribuição")
+    else:
+        kpis = profitability_artifacts["financial_kpis"]
+        product_summary_df = profitability_artifacts["product_profitability_df"]
+        representative_summary_df = profitability_artifacts["representative_profitability_df"]
+        customer_summary_df = profitability_artifacts["customer_profitability_df"]
+        monthly_profitability_df = profitability_artifacts["monthly_profitability_df"]
+        abc_revenue_df = profitability_artifacts["abc_revenue_df"]
+        abc_profit_df = profitability_artifacts["abc_profit_df"]
 
     c1, c2, c3, c4, c5, c6 = st.columns(6)
     with c1:
@@ -48,19 +71,21 @@ def render_profitability(sales_df: pd.DataFrame, profitability_df: pd.DataFrame,
 
     st.markdown("<br>", unsafe_allow_html=True)
     c7, c8 = st.columns(2)
+    operational_profit_delta_type = "up" if kpis["estimated_operating_profit_value"] >= 0 else "down"
+    operational_margin_delta_type = "up" if kpis["estimated_operating_profit_pct"] >= 0 else "down"
     with c7:
         metric_card(
             "Lucro Operacional Estimado",
             format_currency(kpis["estimated_operating_profit_value"]),
-            delta=f"CF {kpis['fixed_cost_pct']:.0f}%",
-            delta_type="up",
+            delta=f"CF {kpis['fixed_cost_pct']:.2f}%",
+            delta_type=operational_profit_delta_type,
         )
     with c8:
         metric_card(
             "Margem Operacional",
             f"{kpis['estimated_operating_profit_pct']:.2f}%",
             delta="Após Custos Fixos",
-            delta_type="up",
+            delta_type=operational_margin_delta_type,
         )
 
     st.markdown("<div style='margin: 1rem 0;'></div>", unsafe_allow_html=True)

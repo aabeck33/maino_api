@@ -18,22 +18,53 @@ def render_representatives(sales_df: pd.DataFrame, is_dark: bool) -> None:
     summary_df = SalesAnalytics.get_representative_performance(sales_df)
     monthly_evolution_df = SalesAnalytics.get_representative_monthly_evolution(sales_df)
 
+    expected_columns = [
+        "Representante",
+        "Receita_Total",
+        "Clientes_Unicos",
+        "Pedidos",
+        "Ticket_Medio",
+        "Pedidos_por_Cliente",
+        "Participacao (%)",
+        "Produtos_Distintos",
+    ]
+    for column in expected_columns:
+        if column not in summary_df.columns:
+            summary_df[column] = 0 if column != "Representante" else "N/A"
+
     summary_df = summary_df.sort_values(by="Receita_Total", ascending=False).reset_index(drop=True)
-    total_revenue = summary_df["Receita_Total"].sum()
     total_clients = summary_df["Clientes_Unicos"].sum()
     total_orders = summary_df["Pedidos"].sum()
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    c1, c2, c3, c4 = st.columns(4)
     with c1:
-        metric_card("Faturamento Total", f"R$ {total_revenue:,.2f}", delta="Receita", delta_type="up")
-    with c2:
         metric_card("Representantes Ativos", f"{len(summary_df):,}", delta="Força Comercial")
-    with c3:
+    with c2:
         metric_card("Clientes Atendidos", f"{total_clients:,}", delta="Clientes Únicos")
-    with c4:
+    with c3:
         metric_card("Pedidos Totais", f"{total_orders:,}", delta="Pedidos")
-    with c5:
-        metric_card("Maior Mix por Representantes", f"{int(summary_df['Produtos_Distintos'].max()):,}", delta="SKU distintos")
+    with c4:
+        max_mix = int(summary_df["Produtos_Distintos"].max()) if not summary_df.empty else 0
+        metric_card("Maior Mix por Representantes", f"{max_mix:,}", delta="SKU distintos")
+
+    if summary_df.empty:
+        st.info("Nenhum dado de representantes para os filtros selecionados.")
+        chart_container("Evolução Mensal de Vendas por Representante", "Tendência temporal de receita por representante")
+        if not monthly_evolution_df.empty:
+            fig_evolution = px.line(
+                monthly_evolution_df,
+                x="Mes",
+                y="Receita_Total",
+                color="Representante",
+                markers=True,
+                labels={"Mes": "Mês", "Receita_Total": "Receita (R$)"},
+            )
+            fig_evolution.update_layout(get_plot_layout(is_dark), margin=dict(l=40, r=40, t=30, b=40))
+            st.plotly_chart(fig_evolution, width="stretch", config={"displayModeBar": False})
+        else:
+            st.info("Não foi possível gerar a evolução mensal porque não há coluna de data reconhecida no conjunto de dados.")
+        chart_container_end()
+        return
 
     st.markdown("<div style='margin: 1rem 0;'></div>", unsafe_allow_html=True)
     top_rep = summary_df.iloc[0]

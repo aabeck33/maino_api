@@ -64,12 +64,27 @@ class SalesRepository(BaseRepository):
         return normalized_sales_df
 
     def load_product_code_mapping(self, file_path: Path | None = None) -> dict[str, str]:
-        """Loads old->new product code conversion from historical workbook."""
-        mapping_path = file_path or SETTINGS.data_file_path(SETTINGS.data_files.history)
-        if not mapping_path.exists():
-            return {}
+        """Loads old->new product code conversion from products workbook.
 
-        mapping_df = self._read_excel(mapping_path, sheet_name="Códigos")
+        If the mapping sheet is not found in the products file, falls back to
+        the historical workbook to preserve backward compatibility.
+        """
+        primary_path = file_path or SETTINGS.data_file_path(SETTINGS.data_files.products)
+        fallback_path = SETTINGS.data_file_path(SETTINGS.data_files.history)
+
+        mapping_df = pd.DataFrame()
+        if primary_path.exists():
+            try:
+                mapping_df = self._read_excel(primary_path, sheet_name="Códigos")
+            except Exception:
+                mapping_df = pd.DataFrame()
+
+        if mapping_df.empty and fallback_path.exists() and fallback_path != primary_path:
+            try:
+                mapping_df = self._read_excel(fallback_path, sheet_name="Códigos")
+            except Exception:
+                mapping_df = pd.DataFrame()
+
         if mapping_df.empty:
             return {}
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import pandas as pd
 
-from analytics.kpis.shared import coerce_customer_key
+from analytics.kpis.shared import coerce_customer_key, revenue_series
 from utils.geo import BRAZIL_STATE_CENTROIDS, map_cep_to_uf
 
 
@@ -25,7 +25,7 @@ def _normalize_geo_data(sales_df: pd.DataFrame) -> pd.DataFrame:
 
     normalized_df["UF"] = normalized_df["UF"].astype(str).str.strip().str.upper().replace({"": "N/A", "NONE": "N/A"})
     normalized_df["Cidade"] = normalized_df["Cidade"].astype(str).str.strip().replace({"": "N/A", "None": "N/A", "nan": "N/A"})
-    normalized_df["Valor Total"] = pd.to_numeric(normalized_df["Valor Total"], errors="coerce").fillna(0.0)
+    normalized_df["Valor Total"] = revenue_series(normalized_df, value_column="Valor Total")
 
     def resolve_uf(row: pd.Series) -> str:
         if row["UF"] not in {"", "N/A", "NONE"}:
@@ -52,12 +52,12 @@ def _build_order_summary(sales_df: pd.DataFrame) -> pd.DataFrame:
         CEP=("CEP", "first"),
         UF=("UF", lambda values: next((value for value in values if value not in {"", "N/A"}), "N/A")),
         Cidade=("Cidade", lambda values: next((value for value in values if value not in {"", "N/A"}), "N/A")),
-        Valor_Total=("Valor Total", "first"),
+        Valor_Total=("Valor Total", "sum"),
         Status_da_Nota_Fiscal=("Status da Nota Fiscal", "first"),
         Representante=("Representante", "first"),
         Cliente_Chave=("Cliente_Chave", "first"),
     )
-    order_summary_df["Valor_Total"] = pd.to_numeric(order_summary_df["Valor_Total"], errors="coerce").fillna(0.0)
+    order_summary_df["Valor_Total"] = revenue_series(order_summary_df, value_column="Valor_Total")
 
     return order_summary_df
 
@@ -66,7 +66,7 @@ def calculate_revenue_by_city(sales_df: pd.DataFrame) -> pd.DataFrame:
     """Calculates total revenue and customer base per city."""
     order_summary_df = _build_order_summary(sales_df)
     if order_summary_df.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=["Cidade", "Valor_Total", "Clientes"])
 
     city_revenue_df = order_summary_df.groupby("Cidade", dropna=False, as_index=False).agg(
         Valor_Total=("Valor_Total", "sum"),
@@ -128,6 +128,9 @@ def top_cities_by_revenue(sales_df: pd.DataFrame, top_n: int = 10) -> pd.DataFra
 def top_cities_by_customers(sales_df: pd.DataFrame, top_n: int = 10) -> pd.DataFrame:
     """Returns top cities ranked by unique customers."""
     city_summary_df = calculate_revenue_by_city(sales_df)
+    if "Clientes" not in city_summary_df.columns:
+        city_summary_df = city_summary_df.copy()
+        city_summary_df["Clientes"] = 0
     return city_summary_df.sort_values("Clientes", ascending=False).head(top_n)
 
 

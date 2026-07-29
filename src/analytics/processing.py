@@ -34,6 +34,7 @@ from analytics.kpis import (
     top_cities_by_customers,
     top_cities_by_revenue,
 )
+from analytics.kpis.shared import total_revenue
 from config.settings import SETTINGS
 from repositories.customer_repository import CustomerRepository
 from repositories.product_repository import ProductRepository
@@ -107,7 +108,32 @@ class SalesAnalytics:
             logger.warning("Falha ao enriquecer com base de clientes: %s", exc)
             enriched_sales_df = mapped_sales_df
 
-        return enriched_sales_df
+        return self._prepare_filter_columns(enriched_sales_df)
+
+    def _prepare_filter_columns(self, df: pd.DataFrame) -> pd.DataFrame:
+        """Precomputes normalized filter columns once to speed up reruns."""
+        if df.empty:
+            return df.copy()
+
+        prepared_df = df.copy()
+        status_series = prepared_df.get("Status da Nota Fiscal", pd.Series("", index=prepared_df.index, dtype="object"))
+        product_series = prepared_df.get("Código do Produto", pd.Series("", index=prepared_df.index, dtype="object"))
+        representative_series = prepared_df.get("Representante", pd.Series("", index=prepared_df.index, dtype="object"))
+        uf_series = prepared_df.get("UF", pd.Series("", index=prepared_df.index, dtype="object"))
+
+        prepared_df["_status_norm"] = status_series.apply(SalesAnalytics._normalize_status)
+        prepared_df["_product_code_norm"] = product_series.astype(str).str.strip().str.lower()
+        prepared_df["_representative_norm"] = representative_series.astype(str).str.strip()
+        prepared_df["_customer_key_norm"] = SalesAnalytics._coerce_customer_key(prepared_df).astype(str).str.strip().str.lower()
+        prepared_df["_uf_norm"] = uf_series.astype(str).str.strip().str.upper()
+
+        date_col = self._find_date_column(prepared_df)
+        if date_col and date_col in prepared_df.columns:
+            prepared_df["_date_filter"] = pd.to_datetime(prepared_df[date_col], errors="coerce")
+        else:
+            prepared_df["_date_filter"] = pd.NaT
+
+        return prepared_df
 
     @staticmethod
     def _normalize_status(status: Any) -> str:
@@ -130,10 +156,16 @@ class SalesAnalytics:
         region: Optional[str] = None,
     ) -> pd.DataFrame:
         """Applies dashboard filters to the loaded sales dataset."""
-        filtered_df = self.df.copy()
+        filtered_df = self.df
 
         if status_filter != "Todos":
-            normalized_status = filtered_df["Status da Nota Fiscal"].apply(SalesAnalytics._normalize_status)
+            normalized_status = filtered_df.get("_status_norm")
+            if normalized_status is None:
+                base_status = filtered_df.get(
+                    "Status da Nota Fiscal",
+                    pd.Series("", index=filtered_df.index, dtype="object"),
+                )
+                normalized_status = base_status.apply(SalesAnalytics._normalize_status)
             non_emitted = normalized_status.isin(["NAO_TRANSMITIDA", "NAO EMITIDA"])
 
             if status_filter == "Com NF Emitida":
@@ -145,32 +177,42 @@ class SalesAnalytics:
                 filtered_df = filtered_df[normalized_status == target_status]
 
         if search_product:
+            product_mask_base = filtered_df.get("_product_code_norm")
+            if product_mask_base is None:
+                product_mask_base = filtered_df["Código do Produto"].astype(str).str.strip().str.lower()
             filtered_df = filtered_df[
-                filtered_df["Código do Produto"].astype(str).str.contains(search_product, case=False, na=False)
+                product_mask_base.str.contains(str(search_product).strip().lower(), case=False, na=False)
             ]
 
         if date_start is not None or date_end is not None:
-            date_col = self._find_date_column(filtered_df)
-            if date_col and date_col in filtered_df.columns:
-                filtered_df[date_col] = pd.to_datetime(filtered_df[date_col], errors="coerce")
+            date_series = filtered_df.get("_date_filter")
+            if date_series is not None:
                 mask = pd.Series(True, index=filtered_df.index)
                 if date_start is not None:
-                    mask &= filtered_df[date_col] >= pd.Timestamp(date_start)
+                    mask &= date_series >= pd.Timestamp(date_start)
                 if date_end is not None:
-                    mask &= filtered_df[date_col] <= pd.Timestamp(date_end)
+                    mask &= date_series <= pd.Timestamp(date_end)
                 filtered_df = filtered_df.loc[mask]
 
         if representative not in {None, "", "Todos"} and "Representante" in filtered_df.columns:
-            filtered_df = filtered_df[filtered_df["Representante"].astype(str).str.strip() == representative]
+            rep_series = filtered_df.get("_representative_norm")
+            if rep_series is None:
+                rep_series = filtered_df["Representante"].astype(str).str.strip()
+            filtered_df = filtered_df[rep_series == representative]
 
         if customer not in {None, "", "Todos"}:
-            customer_key = SalesAnalytics._coerce_customer_key(filtered_df)
-            filtered_df = filtered_df[customer_key.astype(str).str.contains(customer, case=False, na=False)]
+            customer_key = filtered_df.get("_customer_key_norm")
+            if customer_key is None:
+                customer_key = SalesAnalytics._coerce_customer_key(filtered_df).astype(str).str.strip().str.lower()
+            filtered_df = filtered_df[customer_key.str.contains(str(customer).strip().lower(), case=False, na=False)]
 
         if region not in {None, "", "Todos"} and "UF" in filtered_df.columns:
-            filtered_df = filtered_df[filtered_df["UF"].astype(str).str.strip().str.upper() == region.upper()]
+            uf_series = filtered_df.get("_uf_norm")
+            if uf_series is None:
+                uf_series = filtered_df["UF"].astype(str).str.strip().str.upper()
+            filtered_df = filtered_df[uf_series == region.upper()]
 
-        return filtered_df
+        return filtered_df.copy()
 
     @staticmethod
     def calculate_kpis(df: pd.DataFrame) -> dict[str, Any]:
@@ -193,16 +235,29 @@ class SalesAnalytics:
 
         Formula
         -------
-        Faturamento = PU de saida * Quantidade
+        Faturamento = Valor Total do Item
         Custo Total = (PU de entrada * Quantidade) + (Faturamento * Custo Variavel %)
         Margem de contribuicao = Faturamento - Custo Total
         Margem Bruta (%) = Margem de contribuicao / Faturamento * 100
         """
         return build_profitability_dataset(df, self.products_df)
 
-    def calculate_financial_kpis(self, profitability_df: pd.DataFrame) -> dict[str, Any]:
+    def calculate_financial_kpis(
+        self,
+        profitability_df: pd.DataFrame,
+        revenue_total_override: float | None = None,
+    ) -> dict[str, Any]:
         """Calculates financial KPIs using the profitability source of truth."""
-        return calculate_financial_kpis(profitability_df, fixed_cost_pct=LUCRO_OPERACIONAL_CUSTO_FIXO)
+        return calculate_financial_kpis(
+            profitability_df,
+            fixed_cost_pct=LUCRO_OPERACIONAL_CUSTO_FIXO,
+            revenue_total_override=revenue_total_override,
+        )
+
+    @staticmethod
+    def calculate_total_revenue(df: pd.DataFrame, value_column: str = "Valor Total") -> float:
+        """Calculates total revenue from line-level values using shared KPI logic."""
+        return total_revenue(df, value_column=value_column)
 
     def get_profitability_by_product(self, profitability_df: pd.DataFrame) -> pd.DataFrame:
         """Aggregates profitability metrics per product."""

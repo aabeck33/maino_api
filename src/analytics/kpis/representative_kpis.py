@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pandas as pd
 
-from analytics.kpis.shared import coerce_customer_key
+from analytics.kpis.shared import coerce_customer_key, revenue_series
 
 
 def _ensure_representative_column(sales_df: pd.DataFrame, default_representative: str = "Leonardo") -> pd.DataFrame:
@@ -29,13 +29,13 @@ def summarize_representative_sales(sales_df: pd.DataFrame) -> pd.DataFrame:
 
     normalized_df = _ensure_representative_column(sales_df)
     normalized_df["Cliente_Chave"] = coerce_customer_key(normalized_df)
+    normalized_df["Valor Total"] = revenue_series(normalized_df, value_column="Valor Total")
 
     orders_df = normalized_df.groupby(["Pedido ID", "Número do Pedido"], dropna=False, as_index=False).agg(
         Representante=("Representante", "first"),
-        Valor_Total=("Valor Total", "first"),
+        Valor_Total=("Valor Total", "sum"),
         Cliente_Chave=("Cliente_Chave", "first"),
     )
-    orders_df["Valor_Total"] = pd.to_numeric(orders_df["Valor_Total"], errors="coerce").fillna(0.0)
 
     summary_df = (
         orders_df.groupby("Representante", dropna=False, as_index=False)
@@ -153,6 +153,7 @@ def build_representative_monthly_evolution(sales_df: pd.DataFrame, date_column: 
 
     normalized_df = _ensure_representative_column(sales_df)
     normalized_df[date_column] = pd.to_datetime(normalized_df[date_column], errors="coerce")
+    normalized_df["Valor Total"] = revenue_series(normalized_df, value_column="Valor Total")
     normalized_df = normalized_df[normalized_df[date_column].notna()]
     if normalized_df.empty:
         return pd.DataFrame()
@@ -161,7 +162,7 @@ def build_representative_monthly_evolution(sales_df: pd.DataFrame, date_column: 
     orders_df = normalized_df.groupby(["Pedido ID", "Número do Pedido"], dropna=False, as_index=False).agg(
         Representante=("Representante", "first"),
         Mes=("Mes", "first"),
-        Valor_Total=("Valor Total", "first"),
+        Valor_Total=("Valor Total", "sum"),
     )
 
     evolution_df = (

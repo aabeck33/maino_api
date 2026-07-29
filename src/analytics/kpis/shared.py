@@ -36,3 +36,15 @@ def normalize_value(value: Any) -> str:
     if value is None:
         return ""
     return str(value).strip()
+
+
+def revenue_series(df: pd.DataFrame, value_column: str = "Valor Total") -> pd.Series:
+    """Builds a numeric revenue series from a value column."""
+    if df is None or df.empty:
+        return pd.Series(dtype="float64")
+    return pd.to_numeric(df.get(value_column, 0.0), errors="coerce").fillna(0.0)
+
+
+def total_revenue(df: pd.DataFrame, value_column: str = "Valor Total") -> float:
+    """Calculates total revenue by summing line-level values."""
+    return float(revenue_series(df, value_column=value_column).sum())

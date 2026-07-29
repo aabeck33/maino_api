@@ -9,6 +9,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from analytics.processing import SalesAnalytics
+from analytics.kpis.profitability_kpis import calculate_financial_kpis
 
 # Build a small in-memory test DataFrame that mimics the Excel file
 def make_df():
@@ -171,10 +172,10 @@ class TestFinancialAnalytics(unittest.TestCase):
         self.assertIn("Margem Bruta (%)", profitability.columns)
         self.assertIn("Faturamento", profitability.columns)
         self.assertGreater(profitability["Lucro Bruto"].sum(), 0.0)
-        self.assertAlmostEqual(profitability.loc[profitability["Código do Produto"] == "A01", "Lucro Bruto"].sum(), 114.48)
+        self.assertAlmostEqual(profitability.loc[profitability["Código do Produto"] == "A01", "Lucro Bruto"].sum(), 1384.7)
         self.assertAlmostEqual(
             profitability.loc[profitability["Código do Produto"] == "A01", "Margem Bruta (%)"].iloc[0],
-            23.85,
+            63.85,
             places=2,
         )
 
@@ -190,6 +191,29 @@ class TestFinancialAnalytics(unittest.TestCase):
         self.assertGreater(kpis["gross_profit_total"], 0.0)
         self.assertGreaterEqual(kpis["gross_margin_avg"], 0.0)
         self.assertEqual(kpis["top_product"], "A01")
+
+    def test_calculate_financial_kpis_operating_formula_and_fixed_cost_normalization(self):
+        analytics = SalesAnalytics.__new__(SalesAnalytics)
+        analytics.products_df = self.products_df
+        analytics.df = self.df
+
+        profitability = analytics.build_profitability_dataset(self.df)
+        kpis_pct = calculate_financial_kpis(profitability, fixed_cost_pct=25.0)
+        kpis_fraction = calculate_financial_kpis(profitability, fixed_cost_pct=0.25)
+
+        self.assertAlmostEqual(kpis_pct["fixed_cost_pct"], 25.0)
+        self.assertAlmostEqual(kpis_fraction["fixed_cost_pct"], 25.0)
+        self.assertAlmostEqual(kpis_pct["fixed_cost_value"], kpis_fraction["fixed_cost_value"])
+        self.assertAlmostEqual(kpis_pct["estimated_operating_profit_value"], kpis_fraction["estimated_operating_profit_value"])
+        self.assertAlmostEqual(kpis_pct["estimated_operating_profit_pct"], kpis_fraction["estimated_operating_profit_pct"])
+
+        expected_fixed_cost = kpis_pct["revenue_total"] * (kpis_pct["fixed_cost_pct"] / 100)
+        expected_operating_profit = kpis_pct["gross_profit_total"] - expected_fixed_cost
+        expected_operating_margin = expected_operating_profit / kpis_pct["revenue_total"] * 100
+
+        self.assertAlmostEqual(kpis_pct["fixed_cost_value"], expected_fixed_cost)
+        self.assertAlmostEqual(kpis_pct["estimated_operating_profit_value"], expected_operating_profit)
+        self.assertAlmostEqual(kpis_pct["estimated_operating_profit_pct"], expected_operating_margin)
 
     def test_build_profitability_dataset_uses_variable_costs_by_origin(self):
         analytics = SalesAnalytics.__new__(SalesAnalytics)
@@ -293,10 +317,10 @@ class TestRepresentativeAnalytics(unittest.TestCase):
 
     def test_representative_sales_summary(self):
         summary = SalesAnalytics.get_representative_sales_summary(self.df)
-        self.assertAlmostEqual(summary.loc[summary['Representante'] == 'Leonardo', 'Receita_Total'].iloc[0], 1200.0)
+        self.assertAlmostEqual(summary.loc[summary['Representante'] == 'Leonardo', 'Receita_Total'].iloc[0], 3200.0)
         self.assertEqual(summary.loc[summary['Representante'] == 'Leonardo', 'Pedidos'].iloc[0], 2)
         self.assertEqual(summary.loc[summary['Representante'] == 'Leonardo', 'Clientes_Unicos'].iloc[0], 2)
-        self.assertAlmostEqual(summary.loc[summary['Representante'] == 'Leonardo', 'Ticket_Medio'].iloc[0], 600.0)
+        self.assertAlmostEqual(summary.loc[summary['Representante'] == 'Leonardo', 'Ticket_Medio'].iloc[0], 1600.0)
 
     def test_representative_repurchase_rate(self):
         summary = SalesAnalytics.get_representative_repurchase_rate(self.df)
@@ -349,6 +373,11 @@ class TestGeoAnalytics(unittest.TestCase):
         top_revenue = SalesAnalytics.get_top_cities_by_revenue(self.df, top_n=2)
         self.assertEqual(len(top_revenue), 2)
         self.assertEqual(top_revenue.iloc[0]["Cidade"], "Campinas")
+
+    def test_top_cities_by_customers_empty_df(self):
+        result = SalesAnalytics.get_top_cities_by_customers(pd.DataFrame(), top_n=10)
+        self.assertTrue(result.empty)
+        self.assertIn("Clientes", result.columns)
 
     def test_state_geo_coordinates(self):
         result = SalesAnalytics.get_state_geo_coordinates(self.df)
