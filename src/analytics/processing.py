@@ -187,11 +187,20 @@ class SalesAnalytics:
         if date_start is not None or date_end is not None:
             date_series = filtered_df.get("_date_filter")
             if date_series is not None:
+                start_ts = pd.Timestamp(date_start).normalize() if date_start is not None else None
+                end_ts = pd.Timestamp(date_end).normalize() if date_end is not None else None
+
+                if start_ts is not None and end_ts is not None and start_ts > end_ts:
+                    start_ts, end_ts = end_ts, start_ts
+
+                # Keep end date inclusive for rows that carry time-of-day information.
+                end_ts_inclusive = end_ts + pd.Timedelta(days=1) - pd.Timedelta(nanoseconds=1) if end_ts is not None else None
+
                 mask = pd.Series(True, index=filtered_df.index)
-                if date_start is not None:
-                    mask &= date_series >= pd.Timestamp(date_start)
-                if date_end is not None:
-                    mask &= date_series <= pd.Timestamp(date_end)
+                if start_ts is not None:
+                    mask &= date_series >= start_ts
+                if end_ts_inclusive is not None:
+                    mask &= date_series <= end_ts_inclusive
                 filtered_df = filtered_df.loc[mask]
 
         if representative not in {None, "", "Todos"} and "Representante" in filtered_df.columns:

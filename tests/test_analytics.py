@@ -2,6 +2,7 @@ import os
 import unittest
 import pandas as pd
 import numpy as np
+from datetime import date
 from pathlib import Path
 import sys
 
@@ -149,6 +150,53 @@ class TestFiltering(unittest.TestCase):
     def test_all_filter_returns_all(self):
         result = self.analytics.get_filtered_data("Todos")
         self.assertEqual(len(result), len(self.analytics.df))
+
+    def test_date_filter_end_is_inclusive(self):
+        df = make_df().copy()
+        df["_date_filter"] = pd.to_datetime([
+            "2026-01-01 13:45:00",
+            "2026-01-01 14:10:00",
+            "2026-01-01 09:00:00",
+            "2026-01-02 11:00:00",
+            "2026-01-02 12:00:00",
+            "2026-02-01 10:00:00",
+            "2026-03-01 10:00:00",
+        ])
+        self.analytics.df = df
+
+        result = self.analytics.get_filtered_data(
+            "Todos",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 1, 1),
+        )
+        self.assertEqual(len(result), 3)
+
+    def test_date_filter_swaps_inverted_interval(self):
+        df = make_df().copy()
+        df["_date_filter"] = pd.to_datetime([
+            "2026-01-01",
+            "2026-01-02",
+            "2026-01-03",
+            "2026-01-04",
+            "2026-01-05",
+            "2026-02-01",
+            "2026-03-01",
+        ])
+        self.analytics.df = df
+
+        normal = self.analytics.get_filtered_data(
+            "Todos",
+            date_start=date(2026, 1, 1),
+            date_end=date(2026, 2, 1),
+        )
+        inverted = self.analytics.get_filtered_data(
+            "Todos",
+            date_start=date(2026, 2, 1),
+            date_end=date(2026, 1, 1),
+        )
+
+        self.assertEqual(len(normal), len(inverted))
+        self.assertListEqual(normal["Pedido ID"].tolist(), inverted["Pedido ID"].tolist())
 
 
 class TestFinancialAnalytics(unittest.TestCase):
