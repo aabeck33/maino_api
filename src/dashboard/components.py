@@ -30,74 +30,332 @@ def apply_css(is_dark: bool) -> None:
     # ==========================================
     if is_dark:
         theme_css = """
+        /* =========================
+        SELECT / DROPDOWN
+        ========================= */
         div[role="listbox"] {
             background: #18181b !important;
-            color: white !important;
+            color: #fafafa !important;
             border: 1px solid #27272a !important;
+            border-radius: 10px !important;
+            box-shadow: 0 6px 18px rgba(0,0,0,0.45) !important;
         }
+
         div[role="option"] {
             background: #18181b !important;
-            color: white !important;
+            color: #fafafa !important;
         }
+
         div[role="option"]:hover {
             background: #27272a !important;
         }
+
+        div[role="option"][aria-selected="true"] {
+            background: #3f3f46 !important;
+            color: #ffffff !important;
+            font-weight: 500 !important;
+        }
+
+        /* =========================
+        BASEWEB SELECT
+        ========================= */
+        [data-baseweb="select"] {
+            background: #18181b !important;
+            border-radius: 10px !important;
+        }
+
+        [data-baseweb="select"] * {
+            color: #fafafa !important;
+        }
+
+        [data-baseweb="select"] > div {
+            background: #18181b !important;
+        }
+
+        [data-baseweb="select"] svg,
+        [data-baseweb="popover"] svg,
+        .stSelectbox svg {
+            color: #d4d4d8 !important;
+            fill: #d4d4d8 !important;
+            opacity: 1 !important;
+        }
+
+        /* =========================
+        INPUTS
+        ========================= */
+        input,
+        textarea {
+            background: #18181b !important;
+            color: #fafafa !important;
+            border: 1px solid #27272a !important;
+        }
+
+        input:focus,
+        textarea:focus {
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 0 2px rgba(59,130,246,0.20) !important;
+        }
+
+        /* =========================
+        DOWNLOAD BUTTON
+        ========================= */
         .stDownloadButton button {
             background: #18181b !important;
-            color: white !important;
+            color: #fafafa !important;
+            border: 1px solid #27272a !important;
+            border-radius: 12px !important;
+            transition: all 0.20s ease-in-out !important;
+            font-weight: 500 !important;
+        }
+
+        .stDownloadButton button:hover {
+            background: #27272a !important;
+            border-color: #52525b !important;
+        }
+
+        .stDownloadButton button:focus {
+            outline: none !important;
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.20) !important;
+        }
+
+        /* =========================
+        BOTÕES STREAMLIT
+        ========================= */
+        .stButton button {
+            background: #18181b !important;
+            color: #fafafa !important;
+            border: 1px solid #27272a !important;
+            border-radius: 12px !important;
+            transition: all 0.20s ease-in-out !important;
+        }
+
+        .stButton button:hover {
+            background: #27272a !important;
+            border-color: #52525b !important;
+        }
+
+        .stButton button:focus {
+            outline: none !important;
+            border-color: #3b82f6 !important;
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.20) !important;
+        }
+
+        /* =========================
+        DATAFRAME
+        ========================= */
+        [data-testid="stDataFrame"] {
             border: 1px solid #27272a !important;
             border-radius: 12px !important;
         }
-        .stDownloadButton button:hover {
-            background: #27272a !important;
+
+        /* =========================
+        SCROLLBAR
+        ========================= */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
         }
-        .stSelectbox svg {
-            color: #ffffff !important;
-            fill: #ffffff !important;
+
+        ::-webkit-scrollbar-track {
+            background: #18181b;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #3f3f46;
+            border-radius: 8px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #52525b;
+        }
+
+        /* =========================
+        TOOLTIPS / POPUPS
+        ========================= */
+        [data-baseweb="tooltip"] {
+            background: #09090b !important;
+            color: #fafafa !important;
+            border: 1px solid #27272a !important;
         }
         """
     else:
         theme_css = """
+        /* =========================
+        SELECT / DROPDOWN
+        ========================= */
         div[role="listbox"] {
             background: #ffffff !important;
             color: #09090b !important;
             border: 1px solid #d4d4d8 !important;
+            border-radius: 10px !important;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.08) !important;
         }
+
         div[role="option"] {
             background: #ffffff !important;
             color: #09090b !important;
         }
+
         div[role="option"]:hover {
             background: #f4f4f5 !important;
         }
+
+        div[role="option"][aria-selected="true"] {
+            background: #e4e4e7 !important;
+            color: #09090b !important;
+            font-weight: 500 !important;
+        }
+
+        /* =========================
+        BASEWEB SELECT
+        ========================= */
+        [data-baseweb="select"] {
+            background: #ffffff !important;
+            border-radius: 10px !important;
+        }
+
+        [data-baseweb="select"] * {
+            color: #09090b !important;
+        }
+
+        [data-baseweb="select"] svg,
+        [data-baseweb="popover"] svg {
+            color: #52525b !important;
+            fill: #52525b !important;
+            opacity: 1 !important;
+        }
+
+        [data-baseweb="select"] > div {
+            background: #ffffff !important;
+        }
+
+        [data-baseweb="select"] > div:last-child {
+            background: transparent !important;
+        }
+
+        /* =========================
+            ARROW FIX
+        ========================= */
+        .stSelectbox svg,
+        [data-baseweb="select"] svg,
+        [data-baseweb="popover"] svg {
+            color: #27272a !important;
+            fill: #27272a !important;
+            stroke: #27272a !important;
+            opacity: 1 !important;
+        }
+
+        .stSelectbox svg path,
+        [data-baseweb="select"] svg path,
+        [data-baseweb="popover"] svg path {
+            fill: #27272a !important;
+            stroke: #27272a !important;
+        }
+
+        /* =========================
+        INPUTS
+        ========================= */
+        input,
+        textarea {
+            background: #ffffff !important;
+            color: #09090b !important;
+            border: 1px solid #d4d4d8 !important;
+        }
+
+        input:focus,
+        textarea:focus {
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 2px rgba(37,99,235,0.15) !important;
+        }
+
+        /* =========================
+        DOWNLOAD BUTTON
+        ========================= */
         .stDownloadButton button {
             background: #ffffff !important;
             color: #09090b !important;
             border: 1px solid #d4d4d8 !important;
             border-radius: 12px !important;
+            transition: all 0.20s ease-in-out !important;
+            font-weight: 500 !important;
         }
+
         .stDownloadButton button:hover {
             background: #f4f4f5 !important;
+            border-color: #a1a1aa !important;
         }
-        [data-baseweb="select"] {
+
+        .stDownloadButton button:focus {
+            outline: none !important;
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.20) !important;
+        }
+
+        /* =========================
+        BOTÕES STREAMLIT
+        ========================= */
+        .stButton button {
             background: #ffffff !important;
-        }
-        [data-baseweb="select"] svg {
-            color: #000000 !important;
-            fill: #000000 !important;
-            opacity: 1 !important;
-        }
-        [data-baseweb="select"] * {
             color: #09090b !important;
+            border: 1px solid #d4d4d8 !important;
+            border-radius: 12px !important;
+            transition: all 0.20s ease-in-out !important;
         }
-        [data-baseweb="select"] svg,
-        [data-baseweb="popover"] svg {
-            color: #000000 !important;
-            fill: #000000 !important;
+
+        .stButton button:hover {
+            background: #f4f4f5 !important;
+            border-color: #a1a1aa !important;
+        }
+
+        .stButton button:focus {
+            outline: none !important;
+            border-color: #2563eb !important;
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.20) !important;
+        }
+
+        /* =========================
+        DATAFRAME
+        ========================= */
+        [data-testid="stDataFrame"] {
+            border: 1px solid #e4e4e7 !important;
+            border-radius: 12px !important;
+        }
+
+        /* =========================
+        SCROLLBAR
+        ========================= */
+        ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: #f4f4f5;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: #a1a1aa;
+            border-radius: 8px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: #71717a;
+        }
+
+        /* ==========================================
+        SETA DOS COMBOBOXES
+        ========================================== */
+        [data-baseweb="select"] svg {
+            color: #27272a !important;
+            fill: #27272a !important;
+            stroke: #27272a !important;
             opacity: 1 !important;
         }
-        [data-baseweb="select"] > div:last-child {
-            background: #f4f4f5 !important;
+
+        [data-baseweb="select"] path {
+            fill: #27272a !important;
+            stroke: #27272a !important;
         }
         """
 
@@ -125,49 +383,83 @@ def apply_css(is_dark: bool) -> None:
             --radius: 10px;
         }}
 
-        /* Hide default Streamlit visual headers & footers for standalone app feel */
-        header[data-testid="stHeader"], #MainMenu, footer, [data-testid="stToolbar"],
-        [data-testid="stDecoration"], [data-testid="stStatusWidget"], .stDeployButton,
-        div[data-testid="stSidebarCollapsedControl"] {{
+        /* ==================================================
+        FOUNDATION
+        ================================================== */
+        * {{
+            box-sizing: border-box;
+        }}
+
+        html,
+        body,
+        [data-testid="stApp"],
+        [data-testid="stAppViewContainer"],
+        .main,
+        .block-container,
+        section[data-testid="stMain"] {{
+            background: var(--bg) !important;
+            color: var(--text) !important;
+            font-family: "DM Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif !important;
+        }}
+
+        /* ==================================================
+        STREAMLIT CLEANUP
+        ================================================== */
+        header[data-testid="stHeader"],
+        #MainMenu,
+        footer,
+        [data-testid="stToolbar"],
+        [data-testid="stDecoration"],
+        [data-testid="stStatusWidget"],
+        .stDeployButton,
+        [data-testid="stSidebarCollapsedControl"] {{
             display: none !important;
         }}
 
-        /* Sidebar styling adjustments */
+        /* ==================================================
+        SIDEBAR
+        ================================================== */
         [data-testid="stSidebar"] {{
-            background-color: var(--bg-subtle) !important;
-            color: var(--text) !important;
+            background: var(--bg-subtle) !important;
+            border-right: 1px solid var(--border) !important;
         }}
+
         [data-testid="stSidebar"] * {{
             color: var(--text) !important;
         }}
-        [data-testid="stSidebar"] a,
-        [data-testid="stSidebar"] label,
-        [data-testid="stSidebar"] span,
-        [data-testid="stSidebar"] button {{
-            color: var(--text) !important;
+
+        section[data-testid="stSidebar"] .stTextInput,
+        section[data-testid="stSidebar"] .stSelectbox,
+        section[data-testid="stSidebar"] .stDateInput {{
+            margin-bottom: -6px;
         }}
 
-        /* Application Layout */
-        html, body, [data-testid="stAppViewContainer"], [data-testid="stApp"], .main, .block-container, section[data-testid="stMain"] {{
-            background-color: var(--bg) !important;
-            color: var(--text) !important;
-            font-family: 'DM Sans', -apple-system, sans-serif !important;
+        section[data-testid="stSidebar"] label {{
+            margin-bottom: 2px !important;
         }}
 
-        /* Ensure text in light theme is always readable */
-        [data-testid="stAppViewContainer"] *,
-        .stMarkdown, .stMarkdown *,
-        .stText, .stText *,
-        .stButton>button,
-        button,
-        label,
-        a,
-        span,
-        li,
-        td,
-        th,
-        p,
-        div,
+        section[data-testid="stSidebar"] .stButton > button {{
+            width: 100%;
+            height: 48px;
+            font-weight: 600;
+            border-radius: 12px;
+        }}
+
+        /* ==================================================
+        LAYOUT
+        ================================================== */
+        .block-container {{
+            max-width: 1500px !important;
+            padding: 2rem 2.8rem !important;
+        }}
+
+        [data-testid="stHorizontalBlock"] {{
+            gap: 1.25rem !important;
+        }}
+
+        /* ==================================================
+        TYPOGRAPHY
+        ================================================== */
         h1,
         h2,
         h3,
@@ -175,262 +467,314 @@ def apply_css(is_dark: bool) -> None:
         h5,
         h6 {{
             color: var(--text) !important;
+            letter-spacing: -0.03em;
         }}
 
-        .stButton>button,
-        input,
-        select,
-        textarea,
-        .stTextInput>div,
-        .stNumberInput>div,
-        .stSelectbox>div,
-        .stCheckbox, .stRadio {{
+        p,
+        span,
+        label,
+        li,
+        td,
+        th {{
             color: var(--text) !important;
-            background-color: var(--card) !important;
-            border-color: var(--border) !important;
         }}
 
-        .block-container {{
-            padding: 2.5rem 3rem !important;
-            max-width: 1400px !important;
-            margin: 0 auto;
-        }}
-
-        /* Horizontal Layout blocks gaps */
-        [data-testid="stHorizontalBlock"] {{
-            gap: 1.25rem !important;
-        }}
-        [data-testid="stVerticalBlock"] > div:has(> [data-testid="stHorizontalBlock"]) {{
-            margin-bottom: 0.5rem !important;
-        }}
-
-        /* Navigation Tab custom styling (pill-style) */
+        /* ==================================================
+        TABS
+        ================================================== */
         button[data-baseweb="tab"] {{
             background: transparent !important;
             color: var(--text-muted) !important;
-            font-size: 0.85rem !important;
+            border-radius: 8px !important;
+            padding: 0.65rem 1.3rem !important;
             font-weight: 500 !important;
-            padding: 0.55rem 1.2rem !important;
             border: 1px solid transparent !important;
-            border-radius: 7px !important;
-            transition: all 0.2s ease-in-out;
+            transition: all 0.18s ease !important;
         }}
+
         button[data-baseweb="tab"]:hover {{
-            color: var(--text) !important;
             background: var(--card-hover) !important;
-        }}
-        button[data-baseweb="tab"][aria-selected="true"] {{
             color: var(--text) !important;
-            background: var(--card) !important;
-            border-color: var(--border) !important;
         }}
-        [data-baseweb="tab-highlight"], [data-baseweb="tab-border"] {{
+
+        button[data-baseweb="tab"][aria-selected="true"] {{
+            background: var(--card) !important;
+            color: var(--text) !important;
+            border-color: var(--border) !important;
+            font-weight: 600 !important;
+        }}
+
+        [data-baseweb="tab-highlight"],
+        [data-baseweb="tab-border"] {{
             display: none !important;
         }}
+
         [data-baseweb="tab-list"] {{
-            gap: 4px !important;
             background: var(--bg-subtle) !important;
             border: 1px solid var(--border) !important;
-            border-radius: 10px !important;
+            border-radius: 12px !important;
             padding: 4px !important;
+            gap: 4px !important;
             margin-bottom: 1.5rem !important;
         }}
 
-        /* Card components styling */
-        .metric-card {{
+        /* ==================================================
+        INPUTS
+        ================================================== */
+        .stTextInput input,
+        .stNumberInput input,
+        .stDateInput input,
+        textarea {{
+            border-radius: 12px !important;
+            border: 1px solid var(--border) !important;
+        }}
+
+        .stTextInput input:focus,
+        .stNumberInput input:focus,
+        .stDateInput input:focus,
+        textarea:focus {{
+            border-color: var(--accent) !important;
+            box-shadow: 0 0 0 3px rgba(37,99,235,0.15) !important;
+        }}
+
+        /* ==================================================
+        SURFACES
+        ================================================== */
+        .metric-card,
+        .chart-wrap,
+        .table-wrap {{
             background: var(--card);
             border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 1.25rem 1.4rem;
+            border-radius: 12px;
             box-shadow: var(--shadow);
-            transition: transform 0.2s ease, box-shadow 0.2s ease;
         }}
+
+        .metric-card {{
+            padding: 1.25rem 1.4rem;
+            transition:
+                transform 0.18s ease,
+                border-color 0.18s ease,
+                box-shadow 0.18s ease;
+        }}
+
         .metric-card:hover {{
-            transform: translateY(-2px);
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            transform: translateY(-3px);
             border-color: var(--accent);
         }}
+
+        .chart-wrap,
+        .table-wrap {{
+            padding: 1.4rem;
+            margin-bottom: 1.25rem;
+        }}
+
+        /* ==================================================
+        METRICS
+        ================================================== */
         .metric-label {{
             font-size: 0.78rem;
-            color: var(--text-muted);
             font-weight: 600;
+            color: var(--text-muted);
             text-transform: uppercase;
             letter-spacing: 0.05em;
         }}
+
         .metric-value {{
             font-size: 1.85rem;
             font-weight: 700;
             color: var(--text);
-            letter-spacing: -0.03em;
             margin-top: 0.2rem;
+            letter-spacing: -0.03em;
         }}
+
         .metric-delta {{
-            font-size: 0.75rem;
-            font-weight: 600;
             margin-top: 0.4rem;
-            padding: 2px 8px;
+            padding: 3px 8px;
             border-radius: 6px;
             display: inline-flex;
-            align-items: center;
-            gap: 3px;
+            gap: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
         }}
-        .delta-up {{ color: var(--green); background: var(--green-muted); }}
-        .delta-down {{ color: var(--red); background: var(--red-muted); }}
-        .delta-warn {{ color: var(--amber); background: var(--amber-muted); }}
 
-        /* Chart container wrap */
-        .chart-wrap {{
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 1.4rem;
-            box-shadow: var(--shadow);
-            margin-bottom: 1.25rem;
+        .delta-up {{
+            color: var(--green);
+            background: var(--green-muted);
         }}
+
+        .delta-down {{
+            color: var(--red);
+            background: var(--red-muted);
+        }}
+
+        .delta-warn {{
+            color: var(--amber);
+            background: var(--amber-muted);
+        }}
+
+        /* ==================================================
+        CHARTS
+        ================================================== */
         .chart-header {{
             margin-bottom: 1rem;
         }}
+
         .chart-title {{
-            font-size: 0.88rem;
+            font-size: 0.9rem;
             font-weight: 600;
-            color: var(--text);
-        }}
-        .chart-subtitle {{
-            font-size: 0.75rem;
-            color: var(--text-dim);
-            margin-top: 0.1rem;
         }}
 
-        /* Data table custom formatting */
-        .table-wrap {{
-            background: var(--card);
-            border: 1px solid var(--border);
-            border-radius: var(--radius);
-            padding: 1.4rem;
-            box-shadow: var(--shadow);
-            margin-bottom: 1.25rem;
-            overflow-x: auto;
+        .chart-subtitle {{
+            font-size: 0.76rem;
+            color: var(--text-dim);
         }}
+
+        /* ==================================================
+        TABLES
+        ================================================== */
         .data-table {{
             width: 100%;
             border-collapse: separate;
             border-spacing: 0;
             font-size: 0.82rem;
         }}
+
         .data-table th {{
-            text-align: left;
-            padding: 0.75rem 0.9rem;
+            background: var(--bg-subtle);
             color: var(--text-muted);
-            font-weight: 600;
-            font-size: 0.72rem;
+            padding: 0.8rem;
+            text-align: left;
             text-transform: uppercase;
             letter-spacing: 0.05em;
             border-bottom: 2px solid var(--border);
+        }}
+
+        .data-table td {{
+            padding: 0.8rem;
+            border-bottom: 1px solid var(--border-subtle);
+        }}
+
+        .data-table tr {{
+            transition: background-color 0.15s ease;
+        }}
+
+        .data-table tr:hover td {{
             background: var(--bg-subtle);
         }}
-        .data-table td {{
-            padding: 0.75rem 0.9rem;
-            color: var(--text);
-            border-bottom: 1px solid var(--border-subtle);
-            font-family: inherit;
-        }}
-        .data-table tr:hover td {{
-            background-color: var(--bg-subtle);
-        }}
+
         .data-table tr:last-child td {{
             border-bottom: none;
         }}
 
-        /* Status Badges */
+        /* ==================================================
+        BADGES
+        ================================================== */
         .badge {{
             display: inline-block;
-            padding: 2px 9px;
+            padding: 3px 9px;
             border-radius: 6px;
             font-size: 0.72rem;
             font-weight: 600;
         }}
-        .badge-green {{ color: var(--green); background: var(--green-muted); }}
-        .badge-red {{ color: var(--red); background: var(--red-muted); }}
-        .badge-amber {{ color: var(--amber); background: var(--amber-muted); }}
-        .badge-blue {{ color: var(--accent); background: rgba(37,99,235,0.1); }}
 
-        /* Executive Brand Banner styling */
+        .badge-green {{
+            background: var(--green-muted);
+            color: var(--green);
+        }}
+
+        .badge-red {{
+            background: var(--red-muted);
+            color: var(--red);
+        }}
+
+        .badge-amber {{
+            background: var(--amber-muted);
+            color: var(--amber);
+        }}
+
+        .badge-blue {{
+            background: rgba(37,99,235,0.12);
+            color: var(--accent);
+        }}
+
+        /* ==================================================
+        BRAND
+        ================================================== */
         .brand-wrap {{
             display: flex;
-            align-items: center;
             justify-content: space-between;
-            margin-bottom: 1.5rem;
-            padding-bottom: 1rem;
+            align-items: center;
             border-bottom: 1px solid var(--border);
+            padding-bottom: 1rem;
+            margin-bottom: 1.5rem;
         }}
+
         .brand-title {{
             font-size: 1.45rem;
             font-weight: 700;
-            letter-spacing: -0.02em;
             color: var(--text);
-            display: flex;
-            align-items: center;
-            gap: 8px;
         }}
+
         .brand-subtitle {{
-            font-size: 0.8rem;
-            color: var(--text-muted);
             margin-top: 0.2rem;
+            color: var(--text-muted);
+            font-size: 0.8rem;
         }}
-        
-        /* Insight section styling */
+
+        /* ==================================================
+        INSIGHTS
+        ================================================== */
         .insight-card {{
             background: var(--bg-subtle);
             border-left: 4px solid var(--accent);
-            border-radius: 4px;
-            padding: 0.9rem 1.2rem;
+            border-radius: 8px;
+            padding: 1rem 1.2rem;
             margin-bottom: 1rem;
         }}
+
         .insight-title {{
-            font-size: 0.82rem;
+            font-size: 0.85rem;
             font-weight: 600;
-            color: var(--text);
         }}
+
         .insight-desc {{
-            font-size: 0.78rem;
-            color: var(--text-muted);
             margin-top: 0.3rem;
-            line-height: 1.4;
+            color: var(--text-muted);
+            font-size: 0.8rem;
+            line-height: 1.5;
         }}
-        section[data-testid="stSidebar"] .stTextInput,
-        section[data-testid="stSidebar"] .stSelectbox,
-        section[data-testid="stSidebar"] .stDateInput {{
-            margin-bottom: -8px;
-        }}
-        section[data-testid="stSidebar"] label {{
-            margin-bottom: 2px !important;
-        }}
-        section[data-testid="stSidebar"] .stButton > button {{
-            border-radius: 12px;
-            height: 48px;
-            width: 100%;
-            font-weight: 600;
-        }}
-        .stTextInput input,
-        .stDateInput input {{
+
+        /* ==================================================
+        DATAFRAME
+        ================================================== */
+        [data-testid="stDataFrame"] {{
             border-radius: 12px !important;
+            overflow: hidden;
         }}
-        .stSelectbox div[data-baseweb="select"] {{
-            border-radius: 12px !important;
+
+        /* ==================================================
+        SCROLLBAR
+        ================================================== */
+        ::-webkit-scrollbar {{
+            width: 10px;
+            height: 10px;
+        }}
+
+        ::-webkit-scrollbar-track {{
+            background: var(--bg-subtle);
+        }}
+
+        ::-webkit-scrollbar-thumb {{
+            background: var(--border);
+            border-radius: 8px;
+        }}
+
+        ::-webkit-scrollbar-thumb:hover {{
+            background: var(--text-dim);
         }}
 
         {theme_css}
 
-        /* ==========================================
-        INPUTS E SELECTS
-        ========================================== */
-        .stTextInput input,
-        .stDat*Input input {{
-            border-radius: *2px !important;
-        }}
-        .stSelectbox d*v[data-baseweb="select"] {{
-            bo*der-radius: 12px !important;
-        }}
     </style>
     """
     st.markdown(css, unsafe_allow_html=True)

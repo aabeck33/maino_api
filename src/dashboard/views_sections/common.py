@@ -9,23 +9,67 @@ def format_currency(value: float) -> str:
 
 
 def get_plot_layout(is_dark: bool) -> dict:
-    """Returns the base layout configuration for Plotly charts."""
-    text_color = "#a1a1aa" if is_dark else "#71717a"
-    grid_color = "rgba(255,255,255,0.06)" if is_dark else "rgba(0,0,0,0.06)"
+    """
+    Configuração padrão dos gráficos Plotly.
+    """
+
+    text_color = "#d4d4d8" if is_dark else "#27272a"
+    grid_color = (
+        "rgba(255,255,255,0.08)"
+        if is_dark
+        else "rgba(0,0,0,0.08)"
+    )
 
     return dict(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
-        font=dict(family="DM Sans, sans-serif", color=text_color, size=11),
-        margin=dict(l=40, r=40, t=30, b=40),
-        xaxis=dict(
-            gridcolor=grid_color,
-            zerolinecolor=grid_color,
-            tickfont=dict(size=10, color=text_color),
+
+        font=dict(
+            family="DM Sans, sans-serif",
+            color=text_color,
+            size=11,
         ),
-        yaxis=dict(
+
+        legend=dict(
+            font=dict(
+                color=text_color,
+                size=12,
+            ),
+            bgcolor="rgba(0,0,0,0)",
+            borderwidth=0,
+            orientation="h",
+        ),
+
+        margin=dict(
+            l=40,
+            r=40,
+            t=30,
+            b=40,
+        ),
+
+        xaxis=dict(
+            title_font=dict(
+                color=text_color,
+                size=11,
+            ),
+            tickfont=dict(
+                color=text_color,
+                size=10,
+            ),
             gridcolor=grid_color,
             zerolinecolor=grid_color,
-            tickfont=dict(size=10, color=text_color),
+        ),
+
+        yaxis=dict(
+            title_font=dict(
+                color=text_color,
+                size=11,
+            ),
+            tickfont=dict(
+                color=text_color,
+                size=10,
+            ),
+            gridcolor=grid_color,
+            zerolinecolor=grid_color,
         ),
     )
