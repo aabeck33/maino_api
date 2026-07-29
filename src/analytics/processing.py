@@ -22,6 +22,8 @@ load_dotenv()
 
 MIN_PED_TICKET_MEDIO = int(os.getenv("MIN_PED_TICKET_MEDIO", "1"))
 LUCRO_OPERACIONAL_CUSTO_FIXO = float(os.getenv("LUCRO_OPERACIONAL_CUSTO_FIXO","25"))
+PROJECT_ROOT = Path(__file__).resolve().parents[2]
+WORK_DIR = PROJECT_ROOT / "work"
 
 class SalesAnalytics:
     """
@@ -36,7 +38,7 @@ class SalesAnalytics:
     @classmethod
     def load_products_catalog(cls, products_excel_path: Optional[Path] = None) -> pd.DataFrame:
         """Loads the product catalog from the Excel workbook in the work folder."""
-        default_path = Path(__file__).resolve().parents[2] / "work" / "produtos.xlsx"
+        default_path = WORK_DIR / "produtos.xlsx"
         path = Path(products_excel_path) if products_excel_path else default_path
 
         if not path.exists():
@@ -882,13 +884,7 @@ class SalesAnalytics:
         """
         Carrega a tabela de conversão de códigos antigos -> códigos novos.
         """
-
-        mapping_file = (
-            Path(__file__).resolve().parents[2]
-            / "work"
-            / "vendas - All Drive - Histórico Gerensys.xlsx"
-        )
-
+        mapping_file = WORK_DIR / "vendas - All Drive - Histórico Gerensys.xlsx"
         try:
             df_codes = pd.read_excel(
                 mapping_file,
