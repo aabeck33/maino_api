@@ -24,6 +24,109 @@ Este projeto oferece uma solução completa para consolidação, inteligência d
 
 ---
 
+## 🏗️ Arquitetura Refatorada (2026-07)
+
+O projeto foi refatorado para separar responsabilidades e preparar escala sem alterar regras de negócio validadas.
+
+### Camadas
+
+1. **Configuração Central**
+   - `src/config/settings.py`
+   - Fonte única para `PROJECT_ROOT`, `WORK_DIR`, `DATA_DIR` e nomes de arquivos de entrada/saída.
+
+2. **Repositórios (Acesso a Dados)**
+   - `src/repositories/sales_repository.py`
+   - `src/repositories/product_repository.py`
+   - `src/repositories/customer_repository.py`
+   - Encapsulam leitura, normalização e cache em memória.
+
+3. **KPIs Centralizados por Domínio**
+   - `src/analytics/kpis/sales_kpis.py`
+   - `src/analytics/kpis/customer_kpis.py`
+   - `src/analytics/kpis/representative_kpis.py`
+   - `src/analytics/kpis/geography_kpis.py`
+   - `src/analytics/kpis/profitability_kpis.py`
+
+4. **Serviço de Orquestração**
+   - `src/services/dashboard_service.py`
+   - Coordena repositórios e módulos de KPI para dashboard e PDF.
+
+5. **Camada de Compatibilidade**
+   - `src/analytics/processing.py`
+   - Mantém API pública do projeto para não quebrar chamadas existentes em views, app, PDF e testes.
+
+### Benefícios
+
+- Eliminação de lógica de leitura Excel espalhada.
+- Única fonte de verdade para cálculos de indicadores.
+- Menor acoplamento entre dashboard e exportação PDF.
+- Facilidade para incluir novas fontes de dados e APIs no futuro.
+
+---
+
+## 🧭 Estratégia da Fonte de Clientes (`clientes.xlsx`)
+
+`clientes.xlsx` passa a ser a fonte oficial de cadastro de clientes na camada de repositório.
+
+Ordem de correspondência implementada:
+
+1. CPF/CNPJ
+2. Razão Social
+3. Nome do Cliente
+
+Normalizações aplicadas:
+
+- Documento: remoção de pontuação e caracteres não numéricos.
+- Nome/Razão Social: remoção de acentos, trim e uppercase.
+- Tratamento defensivo para vazios e inconsistências de preenchimento.
+
+---
+
+## 🗂️ Nova Estrutura de Pastas (Camadas)
+
+```text
+Maino_API/
+├── src/
+│   ├── config/
+│   │   ├── __init__.py
+│   │   └── settings.py
+│   ├── repositories/
+│   │   ├── __init__.py
+│   │   ├── base.py
+│   │   ├── normalization.py
+│   │   ├── sales_repository.py
+│   │   ├── product_repository.py
+│   │   └── customer_repository.py
+│   ├── analytics/
+│   │   ├── processing.py
+│   │   └── kpis/
+│   │       ├── __init__.py
+│   │       ├── shared.py
+│   │       ├── sales_kpis.py
+│   │       ├── customer_kpis.py
+│   │       ├── representative_kpis.py
+│   │       ├── geography_kpis.py
+│   │       └── profitability_kpis.py
+│   ├── services/
+│   │   ├── __init__.py
+│   │   └── dashboard_service.py
+│   └── ...
+└── ...
+```
+
+---
+
+## 🔄 Plano de Migração Recomendada
+
+1. **Fase 1 (Concluída):** centralização de paths, repositórios e KPIs.
+2. **Fase 2:** migração gradual das views para módulos por domínio.
+3. **Fase 3:** extração da lógica de exportação para um serviço dedicado de relatórios.
+4. **Fase 4:** inclusão de novas fontes (APIs/DB) reaproveitando contratos de repositório.
+
+Durante a migração, a compatibilidade foi preservada por `analytics.processing.SalesAnalytics`.
+
+---
+
 ## 📁 Estrutura do Projeto
 
 ```text
