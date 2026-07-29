@@ -67,6 +67,7 @@ def convert_df_to_excel(df: pd.DataFrame, sheet_name: str = "Dados Filtrados") -
 def main():
     """ Main function to run the Streamlit app.
     """
+    logger.info("Iniciando renderizacao principal do dashboard")
     # Load dataset
     excel_path = SETTINGS.data_file_path(SETTINGS.data_files.sales_orders)
     products_excel_path = SETTINGS.data_file_path(SETTINGS.data_files.products)
@@ -273,6 +274,5 @@ def main():
     with tabs[3]:
         render_customers(filtered_df)
 
-if __name__ == "__main__":
-    main()
+main()
 # streamlit run c:/Users/beck_/OneDrive/Documents/eclipse-workspace/Maino_API/src/app.py
