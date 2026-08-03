@@ -85,6 +85,23 @@ def _normalize_text_filter(value: str | None) -> str:
     return str(value).strip().lower()
 
 
+def _normalize_date_filter(value):
+    """Normalizes date widget values to a single date or None."""
+    if value in {None, ""}:
+        return None
+    if isinstance(value, (list, tuple)):
+        if not value:
+            return None
+        return value[0] if len(value) == 1 else value
+    return value
+
+
+def _clear_date_filters() -> None:
+    """Clears the sidebar date filter widgets before the next rerun."""
+    st.session_state["filter_start_date"] = None
+    st.session_state["filter_end_date"] = None
+
+
 def _build_filter_signature(
     status_filter: str,
     product_search: str,
@@ -186,8 +203,20 @@ def main():
         help="Filtra por parte do nome ou chave do cliente."
     )
 
-    start_date = st.sidebar.date_input("Data inicial", value=None)
-    end_date = st.sidebar.date_input("Data final", value=None)
+    date_col1, date_col2 = st.sidebar.columns(2)
+    with date_col1:
+        st.sidebar.date_input("Data inicial", value=None, key="filter_start_date")
+    with date_col2:
+        st.sidebar.date_input("Data final", value=None, key="filter_end_date")
+
+    st.sidebar.button(
+        "🧹 Limpar datas",
+        use_container_width=True,
+        on_click=_clear_date_filters,
+    )
+
+    start_date = _normalize_date_filter(st.session_state.get("filter_start_date"))
+    end_date = _normalize_date_filter(st.session_state.get("filter_end_date"))
 
     filter_signature = _build_filter_signature(
         status_filter=status_filter,

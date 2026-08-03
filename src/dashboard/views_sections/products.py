@@ -24,6 +24,22 @@ PRODUCT_COLOR_SEQUENCE = [
 ]
 
 
+VALID_PRODUCT_CODE_PATTERN = r"^ALL\d{4}$"
+
+
+def _filter_valid_all_products(sales_df: pd.DataFrame) -> pd.DataFrame:
+    """Keeps only rows with product codes in the ALL + 4 numeric digits format."""
+    if sales_df.empty or "Código do Produto" not in sales_df.columns:
+        return pd.DataFrame(columns=sales_df.columns)
+
+    filtered_df = sales_df.copy()
+    normalized_codes = filtered_df["Código do Produto"].astype(str).str.strip().str.upper()
+    valid_mask = normalized_codes.str.match(VALID_PRODUCT_CODE_PATTERN, na=False)
+    filtered_df = filtered_df.loc[valid_mask].copy()
+    filtered_df["Código do Produto"] = normalized_codes.loc[filtered_df.index]
+    return filtered_df
+
+
 def _resolve_date_column(df: pd.DataFrame) -> str | None:
     """Finds the first parsable date column in the dataset."""
     if df.empty:
@@ -151,20 +167,125 @@ def _build_color_map(product_order: Sequence[str]) -> dict[str, str]:
     }
 
 
+def _build_last_sale_list(
+    sales_df: pd.DataFrame,
+    analytics: SalesAnalytics | None,
+) -> pd.DataFrame:
+    """Builds product last-sale list and inactivity flag (>3 months without sales)."""
+    if sales_df.empty or "Código do Produto" not in sales_df.columns:
+        return pd.DataFrame()
+
+    date_column = _resolve_date_column(sales_df)
+    if date_column is None:
+        return pd.DataFrame()
+
+    working_df = sales_df.copy()
+    working_df[date_column] = pd.to_datetime(working_df[date_column], errors="coerce")
+    working_df = working_df[working_df[date_column].notna()].copy()
+    if working_df.empty:
+        return pd.DataFrame()
+
+    working_df["Código do Produto"] = working_df["Código do Produto"].astype(str).str.strip().str.upper()
+
+    last_sale_df = (
+        working_df.groupby("Código do Produto", as_index=False)[date_column]
+        .max()
+        .rename(columns={date_column: "Última Venda"})
+    )
+
+    label_map = _build_product_label_map(analytics)
+    last_sale_df["Produto"] = last_sale_df["Código do Produto"].map(label_map).fillna(last_sale_df["Código do Produto"])
+
+    today = pd.Timestamp.today().normalize()
+    threshold = today - pd.DateOffset(months=3)
+    last_sale_df["Dias sem venda"] = (today - last_sale_df["Última Venda"]).dt.days
+    last_sale_df["Inativo > 3 meses"] = last_sale_df["Última Venda"] < threshold
+    last_sale_df["Status"] = last_sale_df["Inativo > 3 meses"].map(
+        {True: "Sem venda há mais de 3 meses", False: "Ativo"}
+    )
+
+    return (
+        last_sale_df.sort_values(by=["Inativo > 3 meses", "Última Venda"], ascending=[False, True])
+        .reset_index(drop=True)
+    )
+
+
+def _build_never_sold_products(
+    sales_df: pd.DataFrame,
+    analytics: SalesAnalytics | None,
+) -> pd.DataFrame:
+    """Builds a catalog list of products (ALL####) that never appeared in sales."""
+    if analytics is None or getattr(analytics, "products_df", None) is None or analytics.products_df.empty:
+        return pd.DataFrame(columns=["Código do Produto", "Descrição"])
+
+    catalog_df = analytics.products_df.copy()
+    if "Código" not in catalog_df.columns:
+        return pd.DataFrame(columns=["Código do Produto", "Descrição"])
+
+    catalog_df["Código do Produto"] = catalog_df["Código"].astype(str).str.strip().str.upper()
+    catalog_df = catalog_df[catalog_df["Código do Produto"].str.match(VALID_PRODUCT_CODE_PATTERN, na=False)].copy()
+    if catalog_df.empty:
+        return pd.DataFrame(columns=["Código do Produto", "Descrição"])
+
+    if "Descrição" not in catalog_df.columns:
+        catalog_df["Descrição"] = catalog_df["Código do Produto"]
+    else:
+        catalog_df["Descrição"] = catalog_df["Descrição"].astype(str).str.strip()
+        invalid_desc = catalog_df["Descrição"].str.lower().isin({"", "nan", "none", "n/a", "<na>"})
+        catalog_df.loc[invalid_desc, "Descrição"] = catalog_df.loc[invalid_desc, "Código do Produto"]
+
+    sold_codes = (
+        sales_df.get("Código do Produto", pd.Series(dtype="object"))
+        .astype(str)
+        .str.strip()
+        .str.upper()
+    )
+    sold_codes_set = set(sold_codes[sold_codes.str.match(VALID_PRODUCT_CODE_PATTERN, na=False)].tolist())
+
+    never_sold_df = (
+        catalog_df[["Código do Produto", "Descrição"]]
+        .drop_duplicates(subset=["Código do Produto"], keep="first")
+    )
+    never_sold_df = never_sold_df[~never_sold_df["Código do Produto"].isin(sold_codes_set)].copy()
+    return never_sold_df.sort_values(by=["Código do Produto"]).reset_index(drop=True)
+
+
+def _render_never_sold_products_table(never_sold_df: pd.DataFrame) -> None:
+    """Renders never sold products list below the last-sale section."""
+    st.markdown("##### Produtos que Nunca Foram Vendidos")
+    if never_sold_df.empty:
+        st.info("Nenhum produto elegível sem venda encontrado.")
+        return
+
+    st.caption(f"{len(never_sold_df)} produto(s) do catálogo não possuem venda registrada no período filtrado.")
+    st.dataframe(never_sold_df, hide_index=True, width="stretch")
+
+
 def render_products(sales_df: pd.DataFrame, is_dark: bool, analytics: SalesAnalytics | None = None) -> None:
     """Renders product analytics including ranking, Pareto and ABC."""
     st.markdown("### Análise de Produtos")
 
-    unique_products = int(sales_df["Código do Produto"].astype(str).nunique()) if "Código do Produto" in sales_df.columns else 0
+    st.info("Nesta aba, todos os cálculos, listas e gráficos consideram apenas produtos com código no formato ALL + 4 dígitos (ex.: ALL1234).")
+
+    eligible_sales_df = _filter_valid_all_products(sales_df)
+    if eligible_sales_df.empty:
+        st.warning("Nenhum produto no padrão ALL + 4 dígitos foi encontrado para os filtros atuais.")
+        never_sold_df = _build_never_sold_products(eligible_sales_df, analytics)
+        st.markdown("#### Última Venda por Produto")
+        st.info("Sem vendas elegíveis para calcular última venda nos filtros atuais.")
+        _render_never_sold_products_table(never_sold_df)
+        return
+
+    unique_products = int(eligible_sales_df["Código do Produto"].astype(str).nunique()) if "Código do Produto" in eligible_sales_df.columns else 0
     metric_card("Produtos Únicos Comercializados", f"{unique_products:,}", delta="Portfólio Ativo", delta_type="up")
     st.markdown("<div style='margin: 1rem 0;'></div>", unsafe_allow_html=True)
 
     chart_container("Ranking de Produtos Mais Vendidos", "Selecione o limite de exibição")
     limit = st.radio("Quantidade de itens no ranking:", [10, 20], horizontal=True)
 
-    products_abc_df, class_counts = SalesAnalytics.get_abc_pareto_analysis(sales_df)
+    products_abc_df, class_counts = SalesAnalytics.get_abc_pareto_analysis(eligible_sales_df)
 
-    monthly_top_df, monthly_totals_df, top_product_codes, product_labels = _build_top_products_timeline(sales_df, analytics)
+    monthly_top_df, monthly_totals_df, top_product_codes, product_labels = _build_top_products_timeline(eligible_sales_df, analytics)
 
     if not monthly_top_df.empty and top_product_codes:
         top_product_order = [product_labels[code] for code in top_product_codes]
@@ -284,6 +405,57 @@ def render_products(sales_df: pd.DataFrame, is_dark: bool, analytics: SalesAnaly
         st.plotly_chart(fig_pareto, width="stretch", config={"displayModeBar": False})
         chart_container_end()
 
+    st.markdown("#### Última Venda por Produto")
+    last_sale_df = _build_last_sale_list(eligible_sales_df, analytics)
+    never_sold_df = _build_never_sold_products(eligible_sales_df, analytics)
+
+    if last_sale_df.empty:
+        st.info("Não foi possível montar a lista de última venda para os filtros atuais.")
+    else:
+        inactive_sold_count = int(last_sale_df["Inativo > 3 meses"].sum())
+        sold_count = len(last_sale_df)
+        never_sold_count = len(never_sold_df)
+        total_count = sold_count + never_sold_count
+        inactive_total_count = inactive_sold_count + never_sold_count
+        inactive_pct = (inactive_total_count / total_count * 100) if total_count > 0 else 0.0
+
+        kpi_col1, kpi_col2 = st.columns(2)
+        with kpi_col1:
+            metric_card(
+                "Produtos Inativos (> 3 meses)",
+                f"{inactive_pct:.1f}%",
+                delta=f"{inactive_total_count} produto(s)",
+                delta_type="warn" if inactive_total_count > 0 else "up",
+            )
+        with kpi_col2:
+            metric_card(
+                "Total de Produtos",
+                f"{total_count:,}",
+                delta=f"{never_sold_count} não comercializados",
+                delta_type="up",
+            )
+
+        st.caption(
+            f"{inactive_total_count} de {total_count} produtos estão inativos (inclui {never_sold_count} não comercializados e {inactive_sold_count} sem venda há mais de 3 meses)."
+        )
+
+        display_df = last_sale_df.copy()
+        display_df["Última Venda"] = pd.to_datetime(display_df["Última Venda"], errors="coerce").dt.strftime("%d/%m/%Y")
+
+        def _highlight_inactive(row: pd.Series) -> list[str]:
+            if bool(row.get("Inativo > 3 meses")):
+                return ["background-color: rgba(239, 68, 68, 0.12);"] * len(row)
+            return [""] * len(row)
+
+        styled_df = (
+            display_df[["Produto", "Código do Produto", "Última Venda", "Dias sem venda", "Status", "Inativo > 3 meses"]]
+            .style.apply(_highlight_inactive, axis=1)
+            .hide(axis="columns", subset=["Inativo > 3 meses"])
+        )
+        st.dataframe(styled_df, hide_index=True, width="stretch")
+
+    _render_never_sold_products_table(never_sold_df)
+
     st.markdown("#### Curva ABC (Classificação de Estoque)")
     col_abc_chart, col_abc_table = st.columns([1, 1])
 
@@ -325,6 +497,7 @@ def render_products(sales_df: pd.DataFrame, is_dark: bool, analytics: SalesAnaly
                 "Classe ABC": "Classe",
             },
         )
+
 
 
 def render_orders(sales_df: pd.DataFrame, is_dark: bool) -> None:

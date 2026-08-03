@@ -57,7 +57,7 @@ class SalesRepository(BaseRepository):
             errors="coerce"
         ).fillna(0.0)
         normalized_sales_df["Número do Pedido"] = normalized_sales_df.get("Número do Pedido", "").astype(str)
-        normalized_sales_df["Código do Produto"] = normalized_sales_df.get("Código do Produto", "").astype(str).str.strip()
+        normalized_sales_df["Código do Produto"] = normalized_sales_df.get("Código do Produto", "").astype(str).str.strip().str.upper()
         normalized_sales_df["ID da Nota Fiscal"] = normalized_sales_df.get("ID da Nota Fiscal", "").astype(str).str.strip()
         normalized_sales_df["Status da Nota Fiscal"] = normalized_sales_df.get("Status da Nota Fiscal", "").astype(str).str.strip()
         normalized_sales_df["URL NFe"] = normalized_sales_df.get("URL NFe", "").astype(str).str.strip()
@@ -100,12 +100,19 @@ class SalesRepository(BaseRepository):
         if old_code_column not in mapping_df.columns or new_code_column not in mapping_df.columns:
             return {}
 
-        return dict(
-            zip(
-                mapping_df[old_code_column].astype(str).str.strip(),
-                mapping_df[new_code_column].astype(str).str.strip(),
-            )
-        )
+        normalized_mapping: dict[str, str] = {}
+        for old_code, new_code in zip(mapping_df[old_code_column], mapping_df[new_code_column]):
+            old_norm = str(old_code).strip().upper()
+            new_norm = str(new_code).strip().upper()
+
+            if old_norm in {"", "NAN", "NONE", "<NA>"}:
+                continue
+            if new_norm in {"", "NAN", "NONE", "<NA>"}:
+                continue
+
+            normalized_mapping[old_norm] = new_norm
+
+        return normalized_mapping
 
     def apply_product_code_mapping(self, sales_df: pd.DataFrame, mapping: dict[str, str]) -> pd.DataFrame:
         """Replaces product codes according to the historical mapping table."""
@@ -113,9 +120,8 @@ class SalesRepository(BaseRepository):
             return sales_df.copy()
 
         mapped_sales_df = sales_df.copy()
-        mapped_sales_df["Código do Produto"] = mapped_sales_df["Código do Produto"].map(
-            lambda code: mapping.get(str(code).strip(), str(code).strip())
-        )
+        normalized_codes = mapped_sales_df["Código do Produto"].astype(str).str.strip().str.upper()
+        mapped_sales_df["Código do Produto"] = normalized_codes.map(mapping).fillna(normalized_codes)
         return mapped_sales_df
 
     @staticmethod
