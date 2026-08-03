@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import os
 import unicodedata
+import pandas as pd
+
 from pathlib import Path
 from typing import Any, Optional
-
-import pandas as pd
 from dotenv import load_dotenv
-
 from analytics.kpis import (
     build_abc_analysis,
     build_abc_pareto_analysis,
@@ -41,8 +40,8 @@ from repositories.product_repository import ProductRepository
 from repositories.sales_repository import SalesRepository
 from utils.logger import setup_logger
 
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 logger = setup_logger("maino_analytics")
-load_dotenv()
 
 MIN_PED_TICKET_MEDIO = int(os.getenv("MIN_PED_TICKET_MEDIO", "1"))
 LUCRO_OPERACIONAL_CUSTO_FIXO = float(os.getenv("LUCRO_OPERACIONAL_CUSTO_FIXO", "25"))

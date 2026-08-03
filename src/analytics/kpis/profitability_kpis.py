@@ -5,8 +5,12 @@ from __future__ import annotations
 import os
 from typing import Any
 import pandas as pd
+import logging
 
 from analytics.kpis.shared import coerce_customer_key, revenue_series, total_revenue
+from utils.logger import setup_logger
+
+logger = setup_logger(__name__)
 
 
 def _get_variable_cost_percentage(origin: str | None) -> float:
@@ -82,7 +86,6 @@ def build_profitability_dataset(sales_df: pd.DataFrame, products_df: pd.DataFram
     profitability_df["Quantidade"] = pd.to_numeric(profitability_df["Quantidade"], errors="coerce").fillna(0.0)
     profitability_df["Código do Produto"] = profitability_df["Código do Produto"].astype(str).str.strip().str.upper()
     profitability_df["Cliente"] = coerce_customer_key(profitability_df)
-
     profitability_df["Representante"] = (
         profitability_df.get("Representante", pd.Series(["N/A"] * len(profitability_df), index=profitability_df.index))
         .astype(str)
@@ -121,7 +124,17 @@ def build_profitability_dataset(sales_df: pd.DataFrame, products_df: pd.DataFram
         how="left",
     )
 
-    profitability_df["Preço de Entrada"] = pd.to_numeric(profitability_df.get("PU de entrada", 0.0), errors="coerce").fillna(0.0)
+    custo = pd.to_numeric(profitability_df.get("Custo", 0.0), errors="coerce")
+    pu_entrada = pd.to_numeric(profitability_df.get("PU de entrada", 0.0), errors="coerce")
+    profitability_df["Preço de Entrada"] = (custo.where(custo > 0, pu_entrada).fillna(0.0))
+    logger.debug(
+        "Usando custo real: %s registros",
+        (custo > 0).sum()
+    )
+    logger.debug(
+        "Usando PU de entrada: %s registros",
+        (custo <= 0).sum()
+    )
     profitability_df["Preço de Venda"] = pd.to_numeric(profitability_df.get("PU de saída", 0.0), errors="coerce").fillna(0.0)
     profitability_df["Origem"] = profitability_df.get("Origem", "").astype(str).fillna("")
 
@@ -195,6 +208,10 @@ def calculate_financial_kpis(
     fixed_cost_value = revenue_total * normalized_fixed_cost_pct / 100
     estimated_operating_profit_value = gross_profit_total - fixed_cost_value
     estimated_operating_profit_pct = (estimated_operating_profit_value / revenue_total * 100) if revenue_total > 0 else 0.0
+
+    logger.debug("fixed_cost_value = revenue_total * normalized_fixed_cost_pct / 100: %s * %s = %s", revenue_total, normalized_fixed_cost_pct, fixed_cost_value)
+    logger.debug("estimated_operating_profit_value = gross_profit_total - fixed_cost_value: %s - %s = %s", gross_profit_total, fixed_cost_value, estimated_operating_profit_value)
+    logger.debug("estimated_operating_profit_pct = (estimated_operating_profit_value / revenue_total * 100): %s / %s * 100 = %s", estimated_operating_profit_value, revenue_total, estimated_operating_profit_pct)
 
     return {
         "revenue_total": revenue_total,

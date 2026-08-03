@@ -13,6 +13,10 @@ import io
 from pathlib import Path
 import pandas as pd
 import streamlit as st
+import os
+
+from dotenv import load_dotenv
+load_dotenv(Path(__file__).resolve().parents[1] / ".env")
 
 from config.settings import SETTINGS
 from utils.pdf_report import generate_executive_pdf
@@ -117,6 +121,7 @@ def main():
     """ Main function to run the Streamlit app.
     """
     logger.info("Iniciando renderizacao principal do dashboard")
+    logger.debug("Modo debug ativado.")
     # Load dataset
     excel_path = SETTINGS.data_file_path(SETTINGS.data_files.sales_orders)
     products_excel_path = SETTINGS.data_file_path(SETTINGS.data_files.products)
@@ -194,22 +199,19 @@ def main():
         end_date=end_date,
     )
 
+    filtered_df = analytics.get_filtered_data(
+        status_filter,
+        product_search,
+        date_start=start_date,
+        date_end=end_date,
+        representative=representative_filter,
+        customer=customer_filter,
+        region=region_filter,
+    )
+    kpis = analytics.calculate_kpis(filtered_df)
+
     previous_signature = st.session_state.get("_filters_signature")
     if previous_signature != filter_signature:
-        filtered_df = analytics.get_filtered_data(
-            status_filter,
-            product_search,
-            date_start=start_date,
-            date_end=end_date,
-            representative=representative_filter,
-            customer=customer_filter,
-            region=region_filter,
-        )
-        kpis = analytics.calculate_kpis(filtered_df)
-        st.session_state["_filters_signature"] = filter_signature
-        st.session_state["_filtered_df"] = filtered_df
-        st.session_state["_kpis"] = kpis
-
         # Clear derived artifacts so they are rebuilt only when explicitly requested.
         st.session_state.pop("_profitability_df", None)
         st.session_state.pop("_prepared_filtered_export_key", None)
@@ -218,9 +220,10 @@ def main():
         st.session_state.pop("_profitability_export_bytes", None)
         st.session_state.pop("_profitability_artifacts", None)
         st.session_state.pop("_profitability_artifacts_signature", None)
-    else:
-        filtered_df = st.session_state.get("_filtered_df", pd.DataFrame())
-        kpis = st.session_state.get("_kpis", analytics.calculate_kpis(filtered_df))
+
+    st.session_state["_filters_signature"] = filter_signature
+    st.session_state["_filtered_df"] = filtered_df
+    st.session_state["_kpis"] = kpis
 
     profitability_df: pd.DataFrame | None = st.session_state.get("_profitability_df")
     profitability_artifacts: dict | None = st.session_state.get("_profitability_artifacts")
@@ -241,6 +244,7 @@ def main():
 
         profitability_source_df = get_profitability_df()
         unified_revenue_total = analytics.calculate_total_revenue(filtered_df)
+        logger.debug("Chamada da função calculate_financial_kpis - App.py")
         financial_kpis = analytics.calculate_financial_kpis(
             profitability_source_df,
             revenue_total_override=unified_revenue_total,
@@ -350,7 +354,8 @@ def main():
     )
 
     # 6. Render Brand Header with theme switcher
-    brand_header("Maino Business Intelligence", IS_DARK, toggle_theme)
+    brand_header("Relatório executivo de Indicadores", IS_DARK, toggle_theme)
+    logger.debug("Menu lateral e filtros renderizados com sucesso.")
 
     # 7. Navigation Tabs
     tabs = st.tabs([
@@ -390,7 +395,7 @@ def main():
 
     if tabs[4].open:
         with tabs[4]:
-            render_products(filtered_df, IS_DARK)
+            render_products(filtered_df, IS_DARK, analytics=analytics)
 
     if tabs[5].open:
         with tabs[5]:
@@ -408,5 +413,6 @@ def main():
         with tabs[8]:
             render_insights(filtered_df, kpis)
 
+    logger.debug("Renderização das abas concluida com sucesso.")
 main()
 # streamlit run c:/Users/beck_/OneDrive/Documents/eclipse-workspace/Maino_API/src/app.py

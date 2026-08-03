@@ -49,6 +49,13 @@ class SalesRepository(BaseRepository):
 
         normalized_sales_df = sales_df.copy()
         normalized_sales_df["Quantidade"] = pd.to_numeric(normalized_sales_df.get("Quantidade", 0.0), errors="coerce").fillna(0.0)
+        normalized_sales_df["Custo"] = pd.to_numeric(
+            normalized_sales_df.get(
+                "Custo",
+                pd.Series(0.0, index=normalized_sales_df.index)
+            ),
+            errors="coerce"
+        ).fillna(0.0)
         normalized_sales_df["Número do Pedido"] = normalized_sales_df.get("Número do Pedido", "").astype(str)
         normalized_sales_df["Código do Produto"] = normalized_sales_df.get("Código do Produto", "").astype(str).str.strip()
         normalized_sales_df["ID da Nota Fiscal"] = normalized_sales_df.get("ID da Nota Fiscal", "").astype(str).str.strip()

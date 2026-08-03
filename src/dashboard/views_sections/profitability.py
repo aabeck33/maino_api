@@ -61,7 +61,7 @@ def render_profitability(
     with c2:
         metric_card("Margem de contribuição", format_currency(kpis["gross_profit_total"]), delta="Resultado", delta_type="up")
     with c3:
-        metric_card("Margem Bruta Média", f"{kpis['gross_margin_avg']:.2f}%", delta="Rentabilidade", delta_type="up")
+        metric_card("Margem de Contribuição Média", f"{kpis['gross_margin_avg']:.2f}%", delta="Rentabilidade", delta_type="up")
     with c4:
         metric_card("Produto Mais Lucrativo", kpis["top_product"], delta="Top SKU")
     with c5:

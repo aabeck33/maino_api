@@ -29,21 +29,13 @@ if str(ROOT_DIR) not in sys.path:
 
 from utils.geo import extract_uf_from_string, map_cep_to_uf, normalize_cep, safe_float
 
-# Logging configuration
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s",
-    handlers=[logging.StreamHandler(sys.stdout)]
-)
-logger = logging.getLogger("export_orders")
-
 load_dotenv()
 
 WORK_DIR = Path(__file__).resolve().parent.parent / "work"
 OUTPUT_FILE = WORK_DIR / "pedidos_confirmados.xlsx"
 QUALITY_REPORT_FILE = WORK_DIR / "pedidos_confirmados_qualidade.json"
 DEFAULT_REPRESENTATIVE = os.getenv("NOME_PADRAO_REPRESENTANTE", "Leonardo")
-
+LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
 EXPECTED_COLUMNS = [
     "Pedido ID",
     "Número do Pedido",
@@ -62,6 +54,14 @@ EXPECTED_COLUMNS = [
     "Valor Total",
     "Representante",
 ]
+
+# Logging configuration
+logging.basicConfig(
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s - %(levelname)s - %(message)s",
+    handlers=[logging.StreamHandler(sys.stdout)]
+)
+logger = logging.getLogger("export_orders")
 
 
 def _is_missing(value: Any) -> bool:
@@ -298,6 +298,7 @@ def deduplicate_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     for row in rows:
         row_key = tuple(row.get(column) for column in EXPECTED_COLUMNS)
         if row_key in seen:
+            logger.debug("Linha duplicada removida: %s", row)
             continue
         seen.add(row_key)
         unique_rows.append(row)
@@ -305,6 +306,8 @@ def deduplicate_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     removed = len(rows) - len(unique_rows)
     if removed > 0:
         logger.info("Deduplicacao aplicada: %s linhas duplicadas removidas.", removed)
+    else:
+        logger.info("Deduplicacao aplicada: nenhuma linha duplicada encontrada.")
     return unique_rows
 
 
@@ -412,53 +415,39 @@ def read_excel_shared(fpath: Path | str) -> io.BytesIO:
 
 
 def load_product_code_mapping(work_dir: Path) -> Dict[str, str]:
-    """Loads Gerensys->Maino product code mapping from products workbook.
-
-    Priority:
-    1) work/produtos.xlsx, sheet "Códigos"
-    2) Any '*Histórico Gerensys*.xlsx' workbook containing sheet "Códigos"
     """
-    mapping: Dict[str, str] = {}
+    Carrega a conversão dos códigos Gerensys para os códigos Mainô.
+    """
+    produtos_file = work_dir / "produtos.xlsx"
+    if not produtos_file.exists():
+        logger.warning("Arquivo produtos.xlsx não encontrado: %s", produtos_file)
+        return {}
 
-    product_workbook = work_dir / "produtos.xlsx"
-    if product_workbook.exists():
-        try:
-            bio = read_excel_shared(product_workbook)
-            df_codes = pd.read_excel(bio, sheet_name="Códigos")
-            if "Código Maino" in df_codes.columns and "Código Gerensys" in df_codes.columns:
-                for _, crow in df_codes.iterrows():
-                    gcode = str(crow.get("Código Gerensys", "")).strip().upper()
-                    mcode = str(crow.get("Código Maino", "")).strip().upper()
-                    if gcode and mcode and gcode != "NAN":
-                        mapping[gcode] = mcode
-                if mapping:
-                    return mapping
-        except Exception as exc:
-            logger.warning("Falha ao carregar mapeamento de códigos em produtos.xlsx: %s", exc)
+    try:
+        df = pd.read_excel(
+            produtos_file,
+            sheet_name="Códigos",
+            engine="openpyxl"
+        )
+        mapping = {}
 
-    hist_files = [f for f in os.listdir(work_dir) if "Histórico Gerensys" in f and f.endswith(".xlsx")]
-    for fname in sorted(hist_files):
-        fpath = work_dir / fname
-        try:
-            bio = read_excel_shared(fpath)
-            xl = pd.ExcelFile(bio)
-            if "Códigos" not in xl.sheet_names:
-                continue
+        for _, row in df.iterrows():
+            gerensys_code = str(row["Código Gerensys"]).strip()
+            maino_code = str(row["Código Maino"]).strip()
+            if (
+                gerensys_code
+                and gerensys_code.lower() != "nan"
+                and maino_code
+                and maino_code.lower() != "nan"
+            ):
+                mapping[gerensys_code] = maino_code
 
-            df_codes = pd.read_excel(xl, sheet_name="Códigos")
-            if "Código Maino" in df_codes.columns and "Código Gerensys" in df_codes.columns:
-                for _, crow in df_codes.iterrows():
-                    gcode = str(crow.get("Código Gerensys", "")).strip().upper()
-                    mcode = str(crow.get("Código Maino", "")).strip().upper()
-                    if gcode and mcode and gcode != "NAN":
-                        mapping[gcode] = mcode
-                if mapping:
-                    return mapping
-        except Exception as exc:
-            logger.warning("Falha ao carregar mapeamento de códigos no arquivo %s: %s", fname, exc)
+        logger.info("Mapeamentos Gerensys -> Mainô carregados: %s", len(mapping))
+        return mapping
 
-    return mapping
-
+    except Exception as exc:
+        logger.error("Erro carregando conversão de códigos: %s", exc)
+        return {}
 
 def load_maino_sales_files(work_dir: Path) -> List[Dict[str, Any]]:
     """
@@ -630,7 +619,7 @@ def load_gerensys_history_files(work_dir: Path) -> List[Dict[str, Any]]:
                 final_prod_code = code_mapping.get(g_prod_code, g_prod_code)
 
                 qty = safe_float(row.get("Quantidade"))
-                val_final = safe_float(row.get("Valor Final") or row.get("Valor Original"))
+                val_final = safe_float(row.get("Valor Final") - row.get("Valor Frete", 0.0))
                 nro_nota = str(row.get("Nro Nota") or row.get("Id Mov") or "").strip()
                 if nro_nota in {"nan", "None", ""}:
                     nro_nota = "N/A"
@@ -764,17 +753,39 @@ def main() -> None:
         customers_index = load_customers_master(WORK_DIR)
         all_rows = enrich_rows_with_customers_master(all_rows, customers_index)
         all_rows = normalize_consolidated_rows(all_rows)
-        all_rows = deduplicate_rows(all_rows)
+        #all_rows = deduplicate_rows(all_rows)
 
         if not all_rows:
             logger.error("Nenhum dado de vendas pôde ser extraído das planilhas indicadas.")
             sys.exit(1)
+
+        '''maino_rows = load_maino_sales_files(WORK_DIR)
+        gerensys_rows = load_gerensys_history_files(WORK_DIR)
+        logger.debug("=" * 60)
+        logger.debug("RESUMO DA CONSOLIDAÇÃO")
+        logger.debug("=" * 60)
+        logger.debug("Linhas Mainô.............: %s", len(maino_rows))
+        logger.debug("Linhas Gerensys..........: %s", len(gerensys_rows))
+        all_rows = maino_rows + gerensys_rows
+        logger.debug("Linhas Consolidadas......: %s", len(all_rows))
+        filtered_rows = filter_generated_orders(all_rows)
+        logger.debug("Após Filtro Status.......: %s", len(filtered_rows))
+        normalized_rows = normalize_consolidated_rows(filtered_rows)
+        logger.debug("Após Normalização........: %s", len(normalized_rows))
+        #dedup_rows = deduplicate_rows(normalized_rows)
+        #logger.debug("Após Deduplicação........: %s", len(dedup_rows))
+        #logger.debug(
+        #    "Linhas removidas.........: %s",
+        #    len(all_rows) - len(dedup_rows)
+        #)
+        logger.debug("=" * 60)'''
 
         logger.info(f"Total consolidado: {len(all_rows)} itens de pedido.")
         save_to_excel(all_rows, OUTPUT_FILE)
         quality_report = build_quality_report(all_rows, raw_total=raw_total, filtered_total=filtered_total)
         save_quality_report(quality_report, QUALITY_REPORT_FILE)
         logger.info("Processo de extração concluído com sucesso.")
+
     except Exception as e:
         logger.error(f"A execução do extrator falhou: {e}", exc_info=True)
         sys.exit(1)

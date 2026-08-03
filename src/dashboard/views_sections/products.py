@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as ob
@@ -13,7 +15,143 @@ from dashboard.components import chart_container, chart_container_end, custom_ta
 from dashboard.views_sections.common import get_plot_layout
 
 
-def render_products(sales_df: pd.DataFrame, is_dark: bool) -> None:
+PRODUCT_COLOR_SEQUENCE = [
+    "#2563eb",
+    "#d97706",
+    "#16a34a",
+    "#7c3aed",
+    "#dc2626",
+]
+
+
+def _resolve_date_column(df: pd.DataFrame) -> str | None:
+    """Finds the first parsable date column in the dataset."""
+    if df.empty:
+        return None
+
+    preferred_candidates = ["Data do Pedido", "Data da Venda", "Data", "date"]
+    for column in preferred_candidates:
+        if column in df.columns:
+            parsed = pd.to_datetime(df[column], errors="coerce")
+            if parsed.notna().any():
+                return column
+
+    for column in df.columns:
+        if "data" not in column.lower() and "date" not in column.lower():
+            continue
+        parsed = pd.to_datetime(df[column], errors="coerce")
+        if parsed.notna().any():
+            return column
+
+    return None
+
+
+def _build_product_label_map(analytics: SalesAnalytics | None) -> dict[str, str]:
+    """Builds readable product labels from the catalog when available."""
+    if analytics is None or getattr(analytics, "products_df", None) is None or analytics.products_df.empty:
+        return {}
+
+    catalog_df = analytics.products_df.copy()
+    if "Código" not in catalog_df.columns:
+        return {}
+
+    catalog_df["Código"] = catalog_df["Código"].astype(str).str.strip().str.upper()
+    if "Descrição" not in catalog_df.columns:
+        return {code: code for code in catalog_df["Código"].dropna().tolist()}
+
+    catalog_df["Descrição"] = catalog_df["Descrição"].astype(str).str.strip()
+
+    label_map: dict[str, str] = {}
+    for _, row in catalog_df.iterrows():
+        code = str(row.get("Código") or "").strip().upper()
+        description = str(row.get("Descrição") or "").strip()
+        if not code:
+            continue
+        if not description or description.lower() in {"nan", "none", "n/a"}:
+            label_map[code] = code
+        else:
+            label_map[code] = f"{description} ({code})"
+
+    return label_map
+
+
+def _build_top_products_timeline(
+    sales_df: pd.DataFrame,
+    analytics: SalesAnalytics | None,
+) -> tuple[pd.DataFrame, pd.DataFrame, list[str], dict[str, str]]:
+    """Builds the monthly grouped volume and participation datasets for the top 5 products."""
+    if sales_df.empty or "Código do Produto" not in sales_df.columns:
+        return pd.DataFrame(), pd.DataFrame(), [], {}
+
+    date_column = _resolve_date_column(sales_df)
+    if date_column is None:
+        return pd.DataFrame(), pd.DataFrame(), [], {}
+
+    working_df = sales_df.copy()
+    working_df[date_column] = pd.to_datetime(working_df[date_column], errors="coerce")
+    working_df = working_df[working_df[date_column].notna()].copy()
+    if working_df.empty:
+        return pd.DataFrame(), pd.DataFrame(), [], {}
+
+    working_df["_month"] = working_df[date_column].dt.to_period("M").dt.to_timestamp()
+    working_df["Código do Produto"] = working_df["Código do Produto"].astype(str).str.strip().str.upper()
+    working_df["Quantidade"] = pd.to_numeric(working_df.get("Quantidade", 0.0), errors="coerce").fillna(0.0)
+
+    top_products_df = (
+        working_df.groupby("Código do Produto", as_index=False)["Quantidade"]
+        .sum()
+        .sort_values("Quantidade", ascending=False)
+        .head(5)
+    )
+
+    top_product_codes = top_products_df["Código do Produto"].tolist()
+    if not top_product_codes:
+        return pd.DataFrame(), pd.DataFrame(), [], {}
+
+    label_map = _build_product_label_map(analytics)
+    product_labels = {
+        code: label_map.get(code, code)
+        for code in top_product_codes
+    }
+
+    monthly_totals_df = (
+        working_df.groupby("_month", as_index=False)["Quantidade"]
+        .sum()
+        .rename(columns={"Quantidade": "Total do Mês"})
+    )
+
+    monthly_top_df = (
+        working_df[working_df["Código do Produto"].isin(top_product_codes)]
+        .groupby(["_month", "Código do Produto"], as_index=False)["Quantidade"]
+        .sum()
+        .merge(monthly_totals_df, on="_month", how="left")
+    )
+
+    if monthly_top_df.empty:
+        return pd.DataFrame(), pd.DataFrame(), top_product_codes, product_labels
+
+    monthly_top_df["Participação (%)"] = (
+        monthly_top_df["Quantidade"] / monthly_top_df["Total do Mês"] * 100
+    ).fillna(0.0)
+    monthly_top_df["Produto"] = monthly_top_df["Código do Produto"].map(product_labels)
+    monthly_top_df["Mês"] = monthly_top_df["_month"]
+
+    top_order = [product_labels[code] for code in top_product_codes]
+    monthly_top_df["Produto"] = pd.Categorical(monthly_top_df["Produto"], categories=top_order, ordered=True)
+    monthly_top_df = monthly_top_df.sort_values(["_month", "Produto"]).reset_index(drop=True)
+
+    return monthly_top_df, monthly_totals_df, top_product_codes, product_labels
+
+
+def _build_color_map(product_order: Sequence[str]) -> dict[str, str]:
+    """Assigns consistent colors to the selected products."""
+    return {
+        product: PRODUCT_COLOR_SEQUENCE[index % len(PRODUCT_COLOR_SEQUENCE)]
+        for index, product in enumerate(product_order)
+    }
+
+
+def render_products(sales_df: pd.DataFrame, is_dark: bool, analytics: SalesAnalytics | None = None) -> None:
     """Renders product analytics including ranking, Pareto and ABC."""
     st.markdown("### Análise de Produtos")
 
@@ -25,6 +163,80 @@ def render_products(sales_df: pd.DataFrame, is_dark: bool) -> None:
     limit = st.radio("Quantidade de itens no ranking:", [10, 20], horizontal=True)
 
     products_abc_df, class_counts = SalesAnalytics.get_abc_pareto_analysis(sales_df)
+
+    monthly_top_df, monthly_totals_df, top_product_codes, product_labels = _build_top_products_timeline(sales_df, analytics)
+
+    if not monthly_top_df.empty and top_product_codes:
+        top_product_order = [product_labels[code] for code in top_product_codes]
+        color_map = _build_color_map(top_product_order)
+
+        chart_container(
+            "Evolução Mensal dos 5 Produtos Mais Vendidos",
+            "Volume agregado por mês com barras agrupadas e participação no total do mês",
+        )
+        fig_monthly_volume = px.bar(
+            monthly_top_df,
+            x="Mês",
+            y="Quantidade",
+            color="Produto",
+            category_orders={"Produto": top_product_order},
+            color_discrete_map=color_map,
+            custom_data=["Produto", "Participação (%)"],
+            labels={"Mês": "Mês", "Quantidade": "Quantidade Vendida", "Produto": "Produto"},
+        )
+        fig_monthly_volume.update_traces(
+            hovertemplate=(
+                "Produto: %{customdata[0]}<br>"
+                "Mês: %{x|%b/%Y}<br>"
+                "Quantidade: %{y:,.0f}<br>"
+                "Participação no mês: %{customdata[1]:.1f}%"
+                "<extra></extra>"
+            )
+        )
+        fig_monthly_volume.update_layout(get_plot_layout(is_dark))
+        fig_monthly_volume.update_layout(
+            barmode="group",
+            height=430,
+            margin=dict(l=40, r=40, t=25, b=55),
+        )
+        fig_monthly_volume.update_xaxes(tickformat="%b/%Y", title_text="Mês")
+        fig_monthly_volume.update_yaxes(title_text="Quantidade Vendida")
+        st.plotly_chart(fig_monthly_volume, width="stretch", config={"displayModeBar": False})
+        chart_container_end()
+
+        chart_container(
+            "Participação Mensal dos 5 Produtos Mais Vendidos",
+            "Percentual de cada produto dentro do volume total vendido no mês",
+        )
+        fig_monthly_share = px.bar(
+            monthly_top_df,
+            x="Mês",
+            y="Participação (%)",
+            color="Produto",
+            category_orders={"Produto": top_product_order},
+            color_discrete_map=color_map,
+            custom_data=["Produto", "Quantidade"],
+            labels={"Mês": "Mês", "Participação (%)": "Participação no Mês (%)", "Produto": "Produto"},
+        )
+        fig_monthly_share.update_traces(
+            hovertemplate=(
+                "Produto: %{customdata[0]}<br>"
+                "Mês: %{x|%b/%Y}<br>"
+                "Quantidade: %{customdata[1]:,.0f}<br>"
+                "Participação no mês: %{y:.1f}%"
+                "<extra></extra>"
+            )
+        )
+        fig_monthly_share.update_layout(get_plot_layout(is_dark))
+        fig_monthly_share.update_layout(
+            barmode="group",
+            height=300,
+            margin=dict(l=40, r=40, t=25, b=55),
+        )
+        fig_monthly_share.update_xaxes(tickformat="%b/%Y", title_text="Mês")
+        fig_monthly_share.update_yaxes(title_text="Participação no Mês (%)")
+        st.plotly_chart(fig_monthly_share, width="stretch", config={"displayModeBar": False})
+        chart_container_end()
 
     if not products_abc_df.empty:
         top_products_df = products_abc_df.head(limit).copy().sort_values(by="Quantidade", ascending=True)
