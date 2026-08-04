@@ -1,12 +1,12 @@
 {
-  "raw_total": 18742,
-  "after_status_filter": 18039,
-  "final_total": 18039,
-  "missing_cpf_cnpj": 1474,
+  "raw_total": 18943,
+  "after_status_filter": 18192,
+  "final_total": 18192,
+  "missing_cpf_cnpj": 1627,
   "missing_customer_name": 0,
   "missing_uf": 231,
   "missing_representative": 0,
   "status_do_pedido_distribution": {
-    "Pedido gerado": 18039
+    "Pedido gerado": 18192
   }
 }

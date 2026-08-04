@@ -536,8 +536,8 @@ def load_maino_sales_files(work_dir: Path) -> List[Dict[str, Any]]:
                     ped_info.get("Status do pedido") or prod_row.get("Status do pedido") or "Pedido gerado"
                 ).strip()
 
-                # Dates extraction: Data de Emissão > Data de Aprovação > Data
-                date_val = ped_info.get("Data de Emissão") or ped_info.get("Data de Aprovação") or ped_info.get("Data") or prod_row.get("Data")
+                # Dates extraction priority: Data > Data de Aprovação > Data de Emissão
+                date_val = ped_info.get("Data") or ped_info.get("Data de Aprovação") or ped_info.get("Data de Emissão") or prod_row.get("Data")
                 parsed_date = pd.to_datetime(date_val, dayfirst=True, errors="coerce")
                 date_str = parsed_date.strftime("%Y-%m-%d") if pd.notna(parsed_date) else "N/A"
 
