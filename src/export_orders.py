@@ -537,7 +537,7 @@ def load_maino_sales_files(work_dir: Path) -> List[Dict[str, Any]]:
                 ).strip()
 
                 # Dates extraction priority: Data > Data de Aprovação > Data de Emissão
-                date_val = ped_info.get("Data") or ped_info.get("Data de Aprovação") or ped_info.get("Data de Emissão") or prod_row.get("Data")
+                date_val = ped_info.get("Data de Emissão") or prod_row.get("Data") or ped_info.get("Data") or ped_info.get("Data de Aprovação")
                 parsed_date = pd.to_datetime(date_val, dayfirst=True, errors="coerce")
                 date_str = parsed_date.strftime("%Y-%m-%d") if pd.notna(parsed_date) else "N/A"
 
