@@ -376,33 +376,40 @@ def render_products(sales_df: pd.DataFrame, is_dark: bool, analytics: SalesAnaly
 
     if not products_abc_df.empty:
         chart_container("Gráfico de Pareto (Regra 80/20)", "Participação individual de vendas vs volume acumulado")
-        fig_pareto = make_subplots(specs=[[{"secondary_y": True}]])
-        fig_pareto.add_trace(
-            ob.Bar(
-                x=products_abc_df["Código do Produto"],
-                y=products_abc_df["Quantidade"],
-                name="Qtd Vendida",
-                marker_color="#2563eb",
-                opacity=0.85,
-            ),
-            secondary_y=False,
-        )
-        fig_pareto.add_trace(
-            ob.Scatter(
-                x=products_abc_df["Código do Produto"],
-                y=products_abc_df["Acumulado (%)"],
-                name="% Acumulado",
-                line=dict(color="#d97706", width=3),
-                mode="lines+markers",
-            ),
-            secondary_y=True,
-        )
+        pareto_products_df = products_abc_df.loc[products_abc_df["Quantidade"] > 100].copy()
 
-        fig_pareto.update_layout(get_plot_layout(is_dark))
-        fig_pareto.update_yaxes(title_text="Quantidade (Itens)", secondary_y=False)
-        fig_pareto.update_yaxes(title_text="Percentual Acumulado (%)", range=[0, 105], secondary_y=True)
-        fig_pareto.update_xaxes(title_text="Produtos")
-        st.plotly_chart(fig_pareto, width="stretch", config={"displayModeBar": False})
+        if pareto_products_df.empty:
+            st.info("Nenhum produto com mais de 100 unidades vendidas nos filtros atuais.")
+        else:
+            pareto_products_df = pareto_products_df.reset_index(drop=True)
+            fig_pareto = make_subplots(specs=[[{"secondary_y": True}]])
+            fig_pareto.add_trace(
+                ob.Bar(
+                    x=pareto_products_df["Código do Produto"],
+                    y=pareto_products_df["Quantidade"],
+                    name="Qtd Vendida",
+                    marker_color="#2563eb",
+                    opacity=0.85,
+                ),
+                secondary_y=False,
+            )
+            fig_pareto.add_trace(
+                ob.Scatter(
+                    x=pareto_products_df["Código do Produto"],
+                    y=pareto_products_df["Acumulado (%)"],
+                    name="% Acumulado",
+                    line=dict(color="#d97706", width=3),
+                    mode="lines+markers",
+                ),
+                secondary_y=True,
+            )
+
+            fig_pareto.update_layout(get_plot_layout(is_dark))
+            fig_pareto.update_yaxes(title_text="Quantidade (Itens)", secondary_y=False)
+            fig_pareto.update_yaxes(title_text="Percentual Acumulado (%)", range=[0, 105], secondary_y=True)
+            fig_pareto.update_xaxes(title_text="Produtos")
+            st.plotly_chart(fig_pareto, width="stretch", config={"displayModeBar": False})
+
         chart_container_end()
 
     st.markdown("#### Última Venda por Produto")
