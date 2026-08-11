@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from io import BytesIO
 
 import pandas as pd
 import plotly.express as px
@@ -285,6 +286,14 @@ def _build_classified_products_table(
     classified_df["Valor vendido"] = classified_df["Valor vendido"].fillna(0.0).map(format_currency)
     classified_df["Custo"] = classified_df["Custo"].fillna(0.0).map(format_currency)
     return classified_df[["Código do Produto", "Quantidade", "Valor vendido", "Custo", "Classe ABC"]]
+
+
+def _dataframe_to_excel_bytes(df: pd.DataFrame, sheet_name: str) -> bytes:
+    """Serializes a dataframe to an Excel workbook in memory."""
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False, sheet_name=sheet_name)
+    return output.getvalue()
 
 
 def _build_color_map(product_order: Sequence[str]) -> dict[str, str]:
@@ -615,6 +624,20 @@ def render_products(sales_df: pd.DataFrame, is_dark: bool, analytics: SalesAnaly
         display_df = last_sale_df.copy()
         display_df["Última Venda"] = pd.to_datetime(display_df["Última Venda"], errors="coerce").dt.strftime("%d/%m/%Y")
 
+        export_df = display_df[["Produto", "Código do Produto", "Última Venda", "Dias sem venda", "Status"]].copy()
+
+        header_col, button_col = st.columns([4, 1])
+        with header_col:
+            st.markdown("##### Última Venda por Produto")
+        with button_col:
+            st.download_button(
+                label="Exportar Excel",
+                data=_dataframe_to_excel_bytes(export_df, "Ultima Venda"),
+                file_name="ultima_venda_por_produto.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
+
         def _highlight_inactive(row: pd.Series) -> list[str]:
             if bool(row.get("Inativo > 3 meses")):
                 return ["background-color: rgba(239, 68, 68, 0.12);"] * len(row)
@@ -661,8 +684,18 @@ def render_products(sales_df: pd.DataFrame, is_dark: bool, analytics: SalesAnaly
         chart_container_end()
 
     with col_abc_table:
-        st.markdown("##### Produtos Classificados")
         classified_products_df = _build_classified_products_table(eligible_sales_df, products_abc_df, analytics)
+        header_col, button_col = st.columns([4, 1])
+        with header_col:
+            st.markdown("##### Produtos Classificados")
+        with button_col:
+            st.download_button(
+                label="Exportar Excel",
+                data=_dataframe_to_excel_bytes(classified_products_df, "Produtos Classificados"),
+                file_name="produtos_classificados.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True,
+            )
         custom_table(
             classified_products_df,
             columns_mapping={
