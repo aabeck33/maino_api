@@ -12,7 +12,7 @@ from plotly.subplots import make_subplots
 
 from analytics.processing import SalesAnalytics
 from dashboard.components import chart_container, chart_container_end, custom_table, metric_card
-from dashboard.views_sections.common import get_plot_layout
+from dashboard.views_sections.common import format_currency, get_plot_layout
 
 
 PRODUCT_COLOR_SEQUENCE = [
@@ -238,6 +238,53 @@ def _build_top_products_revenue_cost_timeline(
         ordered=True,
     )
     return monthly_revenue_cost_df.sort_values(["Produto", "_month", "Tipo"]).reset_index(drop=True)
+
+
+def _build_classified_products_table(
+    sales_df: pd.DataFrame,
+    products_abc_df: pd.DataFrame,
+    analytics: SalesAnalytics | None,
+) -> pd.DataFrame:
+    """Builds the ABC table with total quantity, revenue and cost per product."""
+    if (
+        sales_df.empty
+        or products_abc_df.empty
+        or analytics is None
+        or getattr(analytics, "products_df", None) is None
+        or analytics.products_df.empty
+        or "Código do Produto" not in sales_df.columns
+    ):
+        return pd.DataFrame(columns=["Código do Produto", "Quantidade", "Valor vendido", "Custo", "Classe ABC"])
+
+    working_df = sales_df.copy()
+    working_df["Código do Produto"] = working_df["Código do Produto"].astype(str).str.strip().str.upper()
+    working_df["Quantidade"] = pd.to_numeric(working_df.get("Quantidade", 0.0), errors="coerce").fillna(0.0)
+
+    if "Valor Total" in working_df.columns:
+        working_df["Valor vendido"] = pd.to_numeric(working_df["Valor Total"], errors="coerce").fillna(0.0)
+    elif "Faturamento" in working_df.columns:
+        working_df["Valor vendido"] = pd.to_numeric(working_df["Faturamento"], errors="coerce").fillna(0.0)
+    else:
+        price_series = pd.to_numeric(working_df.get("Preço de Venda", 0.0), errors="coerce").fillna(0.0)
+        working_df["Valor vendido"] = price_series * working_df["Quantidade"]
+
+    catalog_df = analytics.products_df.copy()
+    catalog_df["Código"] = catalog_df["Código"].astype(str).str.strip().str.upper()
+    catalog_df["PU de entrada"] = pd.to_numeric(catalog_df.get("PU de entrada", 0.0), errors="coerce").fillna(0.0)
+    cost_map = catalog_df.set_index("Código")["PU de entrada"].to_dict()
+
+    working_df["Custo"] = working_df["Quantidade"] * working_df["Código do Produto"].map(cost_map).fillna(0.0)
+
+    totals_df = (
+        working_df.groupby("Código do Produto", as_index=False)
+        .agg(**{"Valor vendido": ("Valor vendido", "sum"), "Custo": ("Custo", "sum")})
+    )
+
+    classified_df = products_abc_df.merge(totals_df, on="Código do Produto", how="left")
+    classified_df["Quantidade"] = pd.to_numeric(classified_df["Quantidade"], errors="coerce").fillna(0.0)
+    classified_df["Valor vendido"] = classified_df["Valor vendido"].fillna(0.0).map(format_currency)
+    classified_df["Custo"] = classified_df["Custo"].fillna(0.0).map(format_currency)
+    return classified_df[["Código do Produto", "Quantidade", "Valor vendido", "Custo", "Classe ABC"]]
 
 
 def _build_color_map(product_order: Sequence[str]) -> dict[str, str]:
@@ -615,11 +662,14 @@ def render_products(sales_df: pd.DataFrame, is_dark: bool, analytics: SalesAnaly
 
     with col_abc_table:
         st.markdown("##### Produtos Classificados")
+        classified_products_df = _build_classified_products_table(eligible_sales_df, products_abc_df, analytics)
         custom_table(
-            products_abc_df[["Código do Produto", "Quantidade", "Classe ABC"]],
+            classified_products_df,
             columns_mapping={
                 "Código do Produto": "Código do Produto",
                 "Quantidade": "Qtd Total Vendida",
+                "Valor vendido": "Valor vendido",
+                "Custo": "Custo",
                 "Classe ABC": "Classe",
             },
         )
