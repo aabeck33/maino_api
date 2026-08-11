@@ -159,6 +159,87 @@ def _build_top_products_timeline(
     return monthly_top_df, monthly_totals_df, top_product_codes, product_labels
 
 
+def _build_top_products_revenue_cost_timeline(
+    sales_df: pd.DataFrame,
+    analytics: SalesAnalytics | None,
+    top_product_codes: list[str],
+    product_labels: dict[str, str],
+) -> pd.DataFrame:
+    """Builds the monthly revenue and cost series for the selected top products."""
+    if (
+        sales_df.empty
+        or analytics is None
+        or getattr(analytics, "products_df", None) is None
+        or analytics.products_df.empty
+        or not top_product_codes
+        or "Código do Produto" not in sales_df.columns
+    ):
+        return pd.DataFrame()
+
+    date_column = _resolve_date_column(sales_df)
+    if date_column is None:
+        return pd.DataFrame()
+
+    working_df = sales_df.copy()
+    working_df[date_column] = pd.to_datetime(working_df[date_column], errors="coerce")
+    working_df = working_df[working_df[date_column].notna()].copy()
+    if working_df.empty:
+        return pd.DataFrame()
+
+    working_df["Código do Produto"] = working_df["Código do Produto"].astype(str).str.strip().str.upper()
+    working_df = working_df[working_df["Código do Produto"].isin(top_product_codes)].copy()
+    if working_df.empty:
+        return pd.DataFrame()
+
+    working_df["Quantidade"] = pd.to_numeric(working_df.get("Quantidade", 0.0), errors="coerce").fillna(0.0)
+    if "Valor Total" in working_df.columns:
+        working_df["Faturamento"] = pd.to_numeric(working_df["Valor Total"], errors="coerce").fillna(0.0)
+    elif "Faturamento" in working_df.columns:
+        working_df["Faturamento"] = pd.to_numeric(working_df["Faturamento"], errors="coerce").fillna(0.0)
+    else:
+        price_series = pd.to_numeric(working_df.get("Preço de Venda", 0.0), errors="coerce").fillna(0.0)
+        working_df["Faturamento"] = price_series * working_df["Quantidade"]
+
+    catalog_df = analytics.products_df.copy()
+    catalog_df["Código"] = catalog_df["Código"].astype(str).str.strip().str.upper()
+    catalog_df["PU de entrada"] = pd.to_numeric(catalog_df.get("PU de entrada", 0.0), errors="coerce").fillna(0.0)
+    cost_map = catalog_df.set_index("Código")["PU de entrada"].to_dict()
+
+    working_df["PU de entrada"] = working_df["Código do Produto"].map(cost_map).fillna(0.0)
+    working_df["Custo"] = working_df["Quantidade"] * working_df["PU de entrada"]
+    working_df["_month"] = working_df[date_column].dt.to_period("M").dt.to_timestamp()
+
+    monthly_revenue_cost_df = (
+        working_df.groupby(["_month", "Código do Produto"], as_index=False)
+        .agg(Faturamento=("Faturamento", "sum"), Custo=("Custo", "sum"))
+    )
+
+    if monthly_revenue_cost_df.empty:
+        return pd.DataFrame()
+
+    monthly_revenue_cost_df["Produto"] = monthly_revenue_cost_df["Código do Produto"].map(product_labels)
+    monthly_revenue_cost_df["Produto"] = monthly_revenue_cost_df["Produto"].fillna(monthly_revenue_cost_df["Código do Produto"])
+
+    monthly_revenue_cost_df = monthly_revenue_cost_df.melt(
+        id_vars=["_month", "Código do Produto", "Produto"],
+        value_vars=["Faturamento", "Custo"],
+        var_name="Tipo",
+        value_name="Valor",
+    )
+    monthly_revenue_cost_df["Mês"] = monthly_revenue_cost_df["_month"]
+    monthly_revenue_cost_df["Produto"] = pd.Categorical(
+        monthly_revenue_cost_df["Produto"],
+        categories=[product_labels[code] for code in top_product_codes],
+        ordered=True,
+    )
+    monthly_revenue_cost_df["Tipo"] = pd.Categorical(
+        monthly_revenue_cost_df["Tipo"],
+        categories=["Faturamento", "Custo"],
+        ordered=True,
+    )
+    return monthly_revenue_cost_df.sort_values(["Produto", "_month", "Tipo"]).reset_index(drop=True)
+
+
 def _build_color_map(product_order: Sequence[str]) -> dict[str, str]:
     """Assigns consistent colors to the selected products."""
     return {
@@ -372,6 +453,44 @@ def render_products(sales_df: pd.DataFrame, is_dark: bool, analytics: SalesAnaly
         fig_top.update_layout(get_plot_layout(is_dark))
         fig_top.update_layout(margin=dict(l=100, r=40, t=10, b=40))
         st.plotly_chart(fig_top, width="stretch", config={"displayModeBar": False})
+    chart_container_end()
+
+    monthly_revenue_cost_df = _build_top_products_revenue_cost_timeline(
+        eligible_sales_df,
+        analytics,
+        top_product_codes,
+        product_labels,
+    )
+
+    chart_container(
+        "Faturamento x Custo Mensal dos 5 Produtos Mais Vendidos",
+        "Comparativo mensal entre receita do produto e custo de compra, seguindo o ranking por volume",
+    )
+    if not monthly_revenue_cost_df.empty and top_product_codes:
+        top_product_order = [product_labels[code] for code in top_product_codes]
+        fig_monthly_revenue_cost = px.bar(
+            monthly_revenue_cost_df,
+            x="Mês",
+            y="Valor",
+            color="Tipo",
+            facet_row="Produto",
+            category_orders={"Produto": top_product_order, "Tipo": ["Faturamento", "Custo"]},
+            color_discrete_map={"Faturamento": "#2563eb", "Custo": "#dc2626"},
+            labels={"Mês": "Mês", "Valor": "Valor (R$)", "Tipo": "Tipo", "Produto": "Produto"},
+        )
+        fig_monthly_revenue_cost.update_traces(hovertemplate="Mês: %{x|%b/%Y}<br>Valor: R$ %{y:,.2f}<extra></extra>")
+        fig_monthly_revenue_cost.update_layout(get_plot_layout(is_dark))
+        fig_monthly_revenue_cost.update_layout(
+            barmode="group",
+            height=max(420, 165 * len(top_product_order)),
+            margin=dict(l=60, r=40, t=35, b=55),
+            legend_title_text="",
+        )
+        fig_monthly_revenue_cost.update_xaxes(tickformat="%b/%Y", title_text="Mês")
+        fig_monthly_revenue_cost.update_yaxes(title_text="R$")
+        st.plotly_chart(fig_monthly_revenue_cost, width="stretch", config={"displayModeBar": False})
+    else:
+        st.info("Não há dados suficientes para montar o comparativo mensal de faturamento e custo dos top 5 produtos.")
     chart_container_end()
 
     if not products_abc_df.empty:
