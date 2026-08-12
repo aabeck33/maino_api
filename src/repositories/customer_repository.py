@@ -34,6 +34,7 @@ class CustomerRepository(BaseRepository):
         normalized_customers_df["customer_document_normalized"] = self._series_from_first_available_column(
             normalized_customers_df,
             "customer_document_normalized",
+            "CNPJ/CPF",
             "CPF/CNPJ",
             "CPF/CNPJ do Cliente",
         ).apply(normalize_document)
@@ -46,6 +47,7 @@ class CustomerRepository(BaseRepository):
         normalized_customers_df["customer_name_normalized"] = self._series_from_first_available_column(
             normalized_customers_df,
             "customer_name_normalized",
+            "Nome Fantasia",
             "Nome do Cliente",
             "Cliente",
         ).apply(normalize_customer_name)

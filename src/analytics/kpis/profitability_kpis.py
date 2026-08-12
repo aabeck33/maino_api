@@ -124,8 +124,14 @@ def build_profitability_dataset(sales_df: pd.DataFrame, products_df: pd.DataFram
         how="left",
     )
 
-    custo = pd.to_numeric(profitability_df.get("Custo", 0.0), errors="coerce")
-    pu_entrada = pd.to_numeric(profitability_df.get("PU de entrada", 0.0), errors="coerce")
+    custo = pd.to_numeric(
+        profitability_df.get("Custo", pd.Series(0.0, index=profitability_df.index, dtype="float64")),
+        errors="coerce",
+    )
+    pu_entrada = pd.to_numeric(
+        profitability_df.get("PU de entrada", pd.Series(0.0, index=profitability_df.index, dtype="float64")),
+        errors="coerce",
+    )
     profitability_df["Preço de Entrada"] = (custo.where(custo > 0, pu_entrada).fillna(0.0))
     logger.debug(
         "Usando custo real: %s registros",
@@ -135,7 +141,10 @@ def build_profitability_dataset(sales_df: pd.DataFrame, products_df: pd.DataFram
         "Usando PU de entrada: %s registros",
         (custo <= 0).sum()
     )
-    profitability_df["Preço de Venda"] = pd.to_numeric(profitability_df.get("PU de saída", 0.0), errors="coerce").fillna(0.0)
+    profitability_df["Preço de Venda"] = pd.to_numeric(
+        profitability_df.get("PU de saída", pd.Series(0.0, index=profitability_df.index, dtype="float64")),
+        errors="coerce",
+    ).fillna(0.0)
     profitability_df["Origem"] = profitability_df.get("Origem", "").astype(str).fillna("")
 
     profitability_df["Faturamento"] = _build_order_based_revenue(profitability_df)

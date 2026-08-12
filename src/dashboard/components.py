@@ -3,7 +3,7 @@ import streamlit.components.v1 as components
 from typing import Optional, List
 import pandas as pd
 
-def apply_css(is_dark: bool) -> None:
+def apply_css(is_dark: bool, show_streamlit_menu: bool = True) -> None:
     """Injects custom CSS to style the app according to the Unified Design System."""
 
     # Swapping colors based on active theme
@@ -359,6 +359,16 @@ def apply_css(is_dark: bool) -> None:
         }
         """
 
+    streamlit_menu_css = ""
+    if not show_streamlit_menu:
+        streamlit_menu_css = """
+        header[data-testid="stHeader"],
+        #MainMenu,
+        [data-testid="stToolbar"] {
+            display: none !important;
+        }
+        """
+
     css = f"""
     <style>
         /* Unified Theme variables */
@@ -405,16 +415,15 @@ def apply_css(is_dark: bool) -> None:
         /* ==================================================
         STREAMLIT CLEANUP
         ================================================== */
-        header[data-testid="stHeader"],
-        #MainMenu,
         footer,
-        [data-testid="stToolbar"],
         [data-testid="stDecoration"],
         [data-testid="stStatusWidget"],
         .stDeployButton,
         [data-testid="stSidebarCollapsedControl"] {{
             display: none !important;
         }}
+
+        {streamlit_menu_css}
 
         /* ==================================================
         SIDEBAR

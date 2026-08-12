@@ -263,6 +263,7 @@ class TestFinancialAnalytics(unittest.TestCase):
         self.assertAlmostEqual(kpis_pct["estimated_operating_profit_value"], expected_operating_profit)
         self.assertAlmostEqual(kpis_pct["estimated_operating_profit_pct"], expected_operating_margin)
 
+
     def test_build_profitability_dataset_uses_variable_costs_by_origin(self):
         analytics = SalesAnalytics.__new__(SalesAnalytics)
         analytics.products_df = pd.DataFrame({
@@ -432,6 +433,41 @@ class TestGeoAnalytics(unittest.TestCase):
         self.assertIn("Latitude", result.columns)
         self.assertIn("Longitude", result.columns)
         self.assertGreater(len(result), 0)
+
+
+class TestCustomerSummaryFDY(unittest.TestCase):
+    def test_marks_distributor_fdy_from_tags(self):
+        df = pd.DataFrame(
+            {
+                "Pedido ID": ["p1", "p2", "p3"],
+                "Nome do Cliente": ["Cliente A", "Distribuidor X", "Distribuidor X"],
+                "Valor Total": [100.0, 200.0, 300.0],
+                "Tags": ["VIP", "Distribuidor FDY", "Distribuidor FDY"],
+            }
+        )
+
+        summary_df = SalesAnalytics.get_customer_summary(df)
+        distributor_row = summary_df.loc[summary_df["Cliente_Chave"] == "Distribuidor X"].iloc[0]
+        regular_row = summary_df.loc[summary_df["Cliente_Chave"] == "Cliente A"].iloc[0]
+
+        self.assertEqual(distributor_row["Distribuidor FDY"], "Sim")
+        self.assertEqual(regular_row["Distribuidor FDY"], "Não")
+        self.assertEqual(distributor_row["Pedidos"], 2)
+
+    def test_places_distributors_at_end_of_list(self):
+        df = pd.DataFrame(
+            {
+                "Pedido ID": ["p1", "p2", "p3", "p4"],
+                "Nome do Cliente": ["Cliente B", "Distribuidor X", "Cliente B", "Cliente A"],
+                "Valor Total": [100.0, 200.0, 300.0, 150.0],
+                "Tags": ["", "Distribuidor FDY", "", ""],
+            }
+        )
+
+        summary_df = SalesAnalytics.get_customer_summary(df)
+        ordered_customers = summary_df["Cliente_Chave"].tolist()
+
+        self.assertEqual(ordered_customers, ["Cliente B", "Cliente A", "Distribuidor X"])
 
 
 if __name__ == "__main__":

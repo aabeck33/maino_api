@@ -56,8 +56,19 @@ def toggle_theme():
 
 IS_DARK = st.session_state.theme == "dark"
 
+
+def _env_flag(name: str, default: bool = True) -> bool:
+    """Parses boolean feature flags from environment variables."""
+    value = os.getenv(name)
+    if value is None:
+        return default
+    return str(value).strip().lower() in {"1", "true", "t", "yes", "y", "on"}
+
+
+SHOW_STREAMLIT_MENU = _env_flag("SHOW_STREAMLIT_MENU", default=True)
+
 # 3. Apply Unified Styling CSS
-apply_css(IS_DARK)
+apply_css(IS_DARK, show_streamlit_menu=SHOW_STREAMLIT_MENU)
 
 # 4. In-Memory Excel converter for export
 @st.cache_data(ttl=900, show_spinner=False)

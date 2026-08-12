@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from html import escape
 from io import BytesIO
 
 import pandas as pd
@@ -518,9 +519,17 @@ def render_products(sales_df: pd.DataFrame, is_dark: bool, analytics: SalesAnaly
         product_labels,
     )
 
+    top_products_list_html = ""
+    if top_product_codes:
+        top_product_order = [product_labels[code] for code in top_product_codes]
+        top_products_list_html = "<br>Top 5 produtos:<br>" + "<br>".join(
+            f"{index + 1}. {escape(product_name)}" for index, product_name in enumerate(top_product_order)
+        )
+
     chart_container(
         "Faturamento x Custo Mensal dos 5 Produtos Mais Vendidos",
-        "Comparativo mensal entre receita do produto e custo de compra, seguindo o ranking por volume",
+        "Comparativo mensal entre receita do produto e custo de compra, seguindo o ranking por volume"
+        + top_products_list_html,
     )
     if not monthly_revenue_cost_df.empty and top_product_codes:
         top_product_order = [product_labels[code] for code in top_product_codes]
@@ -544,6 +553,7 @@ def render_products(sales_df: pd.DataFrame, is_dark: bool, analytics: SalesAnaly
         )
         fig_monthly_revenue_cost.update_xaxes(tickformat="%b/%Y", title_text="Mês")
         fig_monthly_revenue_cost.update_yaxes(title_text="R$")
+        fig_monthly_revenue_cost.for_each_annotation(lambda annotation: annotation.update(text=""))
         st.plotly_chart(fig_monthly_revenue_cost, width="stretch", config={"displayModeBar": False})
     else:
         st.info("Não há dados suficientes para montar o comparativo mensal de faturamento e custo dos top 5 produtos.")
